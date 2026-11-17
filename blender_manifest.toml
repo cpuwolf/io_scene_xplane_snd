@@ -1,0 +1,20 @@
+schema_version = "1.0.0"
+
+# Blender 扩展清单。仓库根就是扩展根：`blender --command extension build` 直接可用。
+# 刻意不声明任何依赖 —— 本插件不需要 XPlane2Blender，也不需要 io_scene_xplane_obj。
+id = "io_scene_xplane_snd"
+version = "0.1.0"
+name = "X-Plane SND Import/Export"
+tagline = "Edit X-Plane .snd sound attachments in 3D"
+maintainer = "cpuwolf"
+type = "add-on"
+tags = ["Import-Export", "Game Engine"]
+
+website = "https://github.com/cpuwolf/io_scene_xplane_snd"
+license = ["SPDX:GPL-3.0-or-later"]
+
+blender_version_min = "4.2.0"
+
+# 4.2+ 的清单要求；写出权限说明便于审查
+[permissions]
+files = "Read and write .snd files the user picks in the file browser"
