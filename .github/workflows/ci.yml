@@ -71,6 +71,30 @@ jobs:
       - name: validate extension metadata
         run: "\"$HOME/blender/blender\" --command extension validate ."
 
+      - name: assert package contents (no dev files, no review violations)
+        run: |
+          set -euo pipefail
+          zip=$(ls dist/*.zip | head -1)
+          listing=$(unzip -Z1 "$zip")
+          echo "$listing"
+          for bad in tests/ dist/ __pycache__ .github/ .gitignore; do
+            if echo "$listing" | grep -q "^$bad"; then
+              echo "FAIL: 包里混进 $bad"; exit 1
+            fi
+          done
+          for must in blender_manifest.toml LICENSE __init__.py; do
+            echo "$listing" | grep -qx "$must" || { echo "FAIL: 包根缺 $must"; exit 1; }
+          done
+          mkdir -p "$RUNNER_TEMP/pkg"
+          unzip -q "$zip" -d "$RUNNER_TEMP/pkg"
+          echo "$listing" | sed 's|/.*||' | sort | uniq -c
+          # 审核会逐条 grep 包内文件：只认真实证据（import 语句 / sys 操纵 / bl_ext 字面量），
+          # 注释里提到别的 add-on 名字不算违规，别误报。
+          if grep -rnE "sys\.path\.(insert|append)|[\"']bl_ext|blender_org|user_repository|^[[:space:]]*(import|from)[[:space:]]+(io_scene_xplane_obj|io_xplane2blender)" "$RUNNER_TEMP/pkg" --include=*.py; then
+            echo "FAIL: 包内出现审核违规模式"; exit 1
+          fi
+          echo "PACKAGE OK: $(unzip -Z1 "$zip" | wc -l) entries, $(stat -c%s "$zip" 2>/dev/null || stat -f%z "$zip") bytes"
+
       - name: install and enable extension
         run: "\"$HOME/blender/blender\" --command extension install-file -r user_default -e dist/io_scene_xplane_snd-*.zip"
 

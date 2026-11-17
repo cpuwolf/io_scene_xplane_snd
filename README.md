@@ -134,8 +134,8 @@ dup.data == src.data          # True —— Alt+D / 手动共享数据就长这�
 
 ## 支持版本
 
-定位 Blender **5.x**（`blender_version_min = "5.0.0"`），CI 只在 **5.2.4** 上验证。
-4.2 / 4.5 未在 CI 里覆盖，因此 manifest 不声明支持。
+定位 Blender **5.2 LTS**（`blender_version_min = "5.2.0"`），CI 在 **5.2.4** 上验证。
+4.2 / 4.5 / 5.0 未在 CI 里覆盖，因此 manifest 不声明支持。
 
 ## 发布流程
 
