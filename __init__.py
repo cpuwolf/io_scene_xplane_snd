@@ -1,4 +1,4 @@
-"""io_scene_xplane_snd — X-Plane .snd 的导入 / 导出 / 试听。
+"""io_scene_xplane_snd — X-Plane .snd 的导入 / 导出 / 试听（支持把 .snd 拖进视口）。
 
 刻意零依赖：
   * 不用 XPlane2Blender（不碰 bpy.types.Object.xplane、不调 export_scene.xplane）；
@@ -13,7 +13,7 @@ import sys
 
 import bpy
 
-from . import operators, ui
+from . import filehandlers, operators, ui
 from .operators import (
     EXPORT_OT_xplane_snd,
     IMPORT_OT_xplane_snd,
@@ -31,7 +31,7 @@ def _menu_export(self, context):
     self.layout.operator(EXPORT_OT_xplane_snd.bl_idname, text="X-Plane SND (.snd)")
 
 
-CLASSES = operators.CLASSES + ui.CLASSES
+CLASSES = operators.CLASSES + ui.CLASSES + filehandlers.CLASSES
 
 
 def register():

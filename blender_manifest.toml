@@ -13,7 +13,7 @@ tags = ["Import-Export"]
 website = "https://github.com/cpuwolf/io_scene_xplane_snd"
 license = ["SPDX:GPL-3.0-or-later"]
 
-blender_version_min = "4.2.0"
+blender_version_min = "5.0.0"
 
 # 4.2+ 的清单要求；写出权限说明便于审查
 [permissions]

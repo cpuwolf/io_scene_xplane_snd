@@ -75,12 +75,18 @@ L148  + \tVEH_XYZ 0.000 1.364 -0.559
 
 ## 用法
 
-- `File > Import > X-Plane SND (.snd)` → 选飞机目录里的 `fmod/*.snd`
+- **把 `.snd` 直接拖进 3D 视图**（`FileHandler` 注册了 `.snd`）→ 不会弹文件对话框，直接导入
+- 或者 `File > Import > X-Plane SND (.snd)` → 选飞机目录里的 `fmod/*.snd`
 - 3D 视图侧栏 `X-Plane > X-Plane SND`：看原点、attachment 数、写回、Solo、全部静音
 - 改完 `File > Export > X-Plane SND (.snd)` 写回（默认写回原路径）
 
 试听：给 Speaker 的 `sound` 挂上采样文件即可。注意 Blender 的 Speaker 没有起止帧，
 所有未静音的会一起播 —— 所以默认全静音，用 Solo 逐个听。
+
+## 支持版本
+
+定位 Blender **5.x**（`blender_version_min = "5.0.0"`），CI 只在 **5.2.4** 上验证。
+4.2 / 4.5 未在 CI 里覆盖，因此 manifest 不声明支持。
 
 ## 无头测试
 

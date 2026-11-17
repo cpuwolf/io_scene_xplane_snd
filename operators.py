@@ -6,7 +6,9 @@ import os
 from pathlib import Path
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, StringProperty
+from bpy.props import (BoolProperty, CollectionProperty, EnumProperty,
+                       FloatVectorProperty, StringProperty)
+from bpy.types import OperatorFileListElement
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 
 from . import acftool
@@ -62,6 +64,8 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
 
     filename_ext = ".snd"
     filter_glob: StringProperty(default="*.snd", options={"HIDDEN"})
+    # 拖拽导入时 Blender 会填这个集合（ImportHelper 本身没有 files，得自己声明）
+    files: CollectionProperty(type=OperatorFileListElement, options={"HIDDEN", "SKIP_SAVE"})
     make_speakers: BoolProperty(
         name="用 Speaker 对象",
         description="关闭则用 Empty（Speaker 可以试听、能显示锥体朝向）",
@@ -77,6 +81,13 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
         default="XP2B",
     )
 
+    def invoke(self, context, event):
+        # 从视口/文件浏览器拖进来时，Blender 会带上 files 列表：直接导入，不弹对话框。
+        # 走 File > Import 菜单时 files 是空的，仍然正常弹文件浏览器。
+        if getattr(self, "files", None):
+            return self.execute(context)
+        return ImportHelper.invoke(self, context, event)
+
     def execute(self, context):
         scene = context.scene
         path = self.filepath
@@ -85,6 +96,9 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
         except OSError as exc:
             self.report({"ERROR"}, "读取失败: %s" % exc)
             return {"CANCELLED"}
+
+        if len(getattr(self, "files", []) or []) > 1:
+            self.report({"WARNING"}, "一次只导入一个 .snd（拖入多个时只处理第一个）")
 
         origin, origin_src, warn = acftool.resolve_origin(doc, path)
         store_doc(scene, doc, path, origin, origin_src)
