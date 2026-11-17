@@ -88,6 +88,24 @@ L148  + \tVEH_XYZ 0.000 1.364 -0.559
 定位 Blender **5.x**（`blender_version_min = "5.0.0"`），CI 只在 **5.2.4** 上验证。
 4.2 / 4.5 未在 CI 里覆盖，因此 manifest 不声明支持。
 
+## 发布流程
+
+打一个 `v*` 的 annotated tag 并 push，CI 会：
+
+1. 跑 lint + Blender 5.2.4 的完整测试（build / validate / install -e / smoke /
+   fixtures 往返 / mutation / origin）；
+2. 全绿后**自动建草稿 Release**，把 `io_scene_xplane_snd-<version>.zip` 作为附件上传；
+   release 正文直接取 tag 的注释（`gh release create --notes-from-tag`）。
+
+```bash
+git tag -a v0.1.0 -m "release note..."   # 已在仓库里
+git push origin main --follow-tags        # 触发 CI → 草稿 Release
+```
+
+草稿 Release 不会公开，需要你到 GitHub 上点 Publish 才算发布。
+若 release job 报 403，去 Settings ▸ Actions ▸ General ▸ Workflow permissions
+选 "Read and write permissions"（workflow 里已经声明 `permissions: contents: write`）。
+
 ## 无头测试
 
 ```bash
