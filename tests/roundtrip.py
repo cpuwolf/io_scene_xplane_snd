@@ -33,9 +33,9 @@ def clear():
         bpy.data.speakers.remove(spk)
 
 
-def roundtrip(src: Path):
+def roundtrip(src: Path, axis="XP2B"):
     clear()
-    bpy.ops.import_scene.xplane_snd(filepath=str(src))
+    bpy.ops.import_scene.xplane_snd(filepath=str(src), axis_mode=axis)
     n = len([o for o in bpy.context.scene.objects if "snd_uid" in o])
     dst = OUT / (src.stem + "__rt.snd")
     bpy.ops.export_scene.xplane_snd(filepath=str(dst))
@@ -44,10 +44,10 @@ def roundtrip(src: Path):
     return n, a == b, len(a), len(b)
 
 
-def move_one(src: Path, delta=0.1):
+def move_one(src: Path, delta=0.1, axis="XP2B"):
     """改一个 Speaker 的位置，导出的 diff 应该只有 1 行。"""
     clear()
-    bpy.ops.import_scene.xplane_snd(filepath=str(src))
+    bpy.ops.import_scene.xplane_snd(filepath=str(src), axis_mode=axis)
     objs = sorted([o for o in bpy.context.scene.objects if "snd_uid" in o],
                   key=lambda o: int(o.get("snd_uid", 0)))
     if not objs:
@@ -70,6 +70,9 @@ def move_one(src: Path, delta=0.1):
 
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    axis = "RAW" if "--raw" in argv else "XP2B"
+    argv = [a for a in argv if not a.startswith("--")]
+    print("AXIS", axis, flush=True)
     if argv:
         files = [Path(p) for p in argv]
     else:
@@ -79,7 +82,7 @@ def main():
     ok = bad = 0
     for f in files:
         try:
-            n, same, sa, sb = roundtrip(f)
+            n, same, sa, sb = roundtrip(f, axis)
         except Exception as exc:  # noqa: BLE001
             print("ERR  %-46s %r" % (f.name[:46], exc), flush=True)
             bad += 1
@@ -94,7 +97,7 @@ def main():
     # 改一个点，验证 patch 只动一行
     probe = HOME / "X-Plane 12/Aircraft/Laminar Research/Beechcraft King Air C90B/fmod/C90B.snd"
     if probe.is_file():
-        res = move_one(probe)
+        res = move_one(probe, axis=axis)
         if res:
             same_len, diff = res
             print("PATCH line count same=%s, changed lines=%d" % (same_len, len(diff)), flush=True)

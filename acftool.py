@@ -16,6 +16,30 @@ from pathlib import Path
 
 FEET = 0.3048
 
+# Blender 轴向模式
+#   RAW   : 飞机坐标 (X右/Y上/Z后) 直接当 Blender 坐标 —— 往返最直观，但和导入的网格不对齐
+#   XP2B  : 与 io_scene_xplane_obj / XPlane2Blender 一致：(x, y, z) -> (x, -z, y)
+#           （见 io_scene_xplane_obj/xpmesh.py: xp_to_bl / bl_to_xp）
+AXIS_MODES = ("XP2B", "RAW")
+
+
+def xp_to_bl(co):
+    """飞机坐标（米）-> Blender 坐标。"""
+    return (co[0], -co[2], co[1])
+
+
+def bl_to_xp(co):
+    """Blender 坐标 -> 飞机坐标（米）。x->x, z->y, -y->z。"""
+    return (co[0], co[2], -co[1])
+
+
+def to_blender(co, mode="XP2B"):
+    return xp_to_bl(co) if mode == "XP2B" else tuple(co)
+
+
+def from_blender(co, mode="XP2B"):
+    return bl_to_xp(co) if mode == "XP2B" else tuple(co)
+
 # .acf 是 ASCII 文本：`P acf/_cgY 0.250000000`（也有不带 P 前缀的写法）
 _RE_KEY = r"^\s*(?:P\s+)?acf/%s\s+([-+0-9.eE]+)\s*$"
 

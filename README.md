@@ -29,6 +29,33 @@ custom properties 为准：`snd_event` / `snd_conds` / `snd_part` / `snd_xyz` / 
 所以 `作者坐标 = VEH_XYZ + 原点`。C90B 实测：413 条 `VEH_XYZ` 换算后 **84%** 落在座舱曲面
 10 cm 内，开关类误差 **0.0–0.1 cm**，最远的 `fuel_pump ±1.948 m` 正好是机翼位置。
 
+## 轴向：默认与导入的网格对齐
+
+Blender 是 Z-up，X-Plane 是 Y-up、Z 朝后。`io_scene_xplane_obj` / XPlane2Blender 用的变换是
+（见其 `xpmesh.py` 的 `xp_to_bl`）：
+
+```
+X-Plane (x, y, z)  ->  Blender (x, -z, y)
+```
+
+导入 `.snd` 时可选两种轴向：
+
+| 选项 | 坐标 | 用途 |
+|---|---|---|
+| `对齐导入网格 (XP2B)`（默认） | `(x, -z, y)` | 与 `io_scene_xplane_obj` 导入的 OBJ8 重合，可以直接叠在座舱上看 |
+| `原始飞机坐标` | 原样 | 想直接对着 `.snd` 数字核对时用 |
+
+导出时会用**导入时用的那个轴向**反算回飞机坐标，所以两种模式都能 byte-identical 往返。
+
+实测（C90B，436 个 Speaker 对座舱 9 个 OBJ 的曲面距离）：
+
+```
+XP2B : min 0.0003  p50 0.083  p90 0.193   <=0.2m 90%     PASS
+RAW  : min 2.121   p50 3.745  p90 3.940   <=0.2m  0%     FAIL（负向对照，符合预期）
+```
+
+RAW 差 3.7 米正好说明轴向映射既必要也正确 —— 不是"差一点点"，是差一个坐标轴。
+
 ## 导出：保留原文，只 patch 改动行
 
 `.snd` 里有大量注释和空行（C90B：2993 行里 288 行注释 + 272 行空行），全量重写会把它们
@@ -58,9 +85,16 @@ L148  + \tVEH_XYZ 0.000 1.364 -0.559
 ## 无头测试
 
 ```bash
-blender -b --factory-startup -P tests/roundtrip.py                 # 扫全盘 .snd
-blender -b --factory-startup -P tests/roundtrip.py -- <某个.snd>    # 只测一个
+blender -b --factory-startup -P tests/roundtrip.py                 # 全盘 56 个 .snd 往返
+blender -b --factory-startup -P tests/roundtrip.py -- --raw        # 用原始飞机坐标再跑一遍
+blender -b --factory-startup -P tests/mutation.py                  # 新增/插入字段
+blender -b --factory-startup -P tests/align_mesh.py                # 与网格对齐（自带解析器）
+blender -b                  -P tests/align_mesh.py                 # 同上，但用真·io_scene_xplane_obj 导入器
+blender -b                  -P tests/align_mesh.py -- --raw        # 负向对照，应该 FAIL
 ```
+
+`align_mesh.py` 会优先用 `io_scene_xplane_obj` 的导入器（需要它和 XPlane2Blender 可用），
+否则退回自带的 OBJ8 解析 + 同一个 `xp_to_bl` 变换，所以 CI 里不需要装任何插件。
 
 ## 现状与边界
 

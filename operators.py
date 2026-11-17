@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 import bpy
-from bpy.props import BoolProperty, FloatVectorProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, StringProperty
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 
 from . import acftool
@@ -18,6 +18,7 @@ PROP_PATH = "xplane_snd_path"
 PROP_SRC_B64 = "xplane_snd_source_b64"
 PROP_ORIGIN = "xplane_snd_origin"
 PROP_ORIGIN_SRC = "xplane_snd_origin_source"
+PROP_AXIS = "xplane_snd_axis"
 
 
 # ---------------------------------------------------------------- helpers
@@ -66,6 +67,15 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
         description="关闭则用 Empty（Speaker 可以试听、能显示锥体朝向）",
         default=True,
     )
+    axis_mode: EnumProperty(
+        name="轴向",
+        description="Blender 坐标怎么摆。XP2B 与 io_scene_xplane_obj 导入的网格对齐",
+        items=(
+            ("XP2B", "对齐导入网格 (XP2B)", "(x, y, z) -> (x, -z, y)，与 io_scene_xplane_obj 一致"),
+            ("RAW", "原始飞机坐标", "飞机坐标直接当 Blender 坐标（X右/Y上/Z后）"),
+        ),
+        default="XP2B",
+    )
 
     def execute(self, context):
         scene = context.scene
@@ -78,6 +88,8 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
 
         origin, origin_src, warn = acftool.resolve_origin(doc, path)
         store_doc(scene, doc, path, origin, origin_src)
+        axis = self.axis_mode
+        scene[PROP_AXIS] = axis
 
         coll_name = "SND " + os.path.basename(path)
         coll = bpy.data.collections.get(coll_name) or bpy.data.collections.new(coll_name)
@@ -97,11 +109,10 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
                 obj = bpy.data.objects.new(base, None)
             coll.objects.link(obj)
 
-            # 位置：作者坐标 = VEH_XYZ + 原点；没有 VEH_XYZ 的（VEH_PART）放在原点
-            if att.xyz is not None:
-                obj.location = (att.xyz[0] + origin[0], att.xyz[1] + origin[1], att.xyz[2] + origin[2])
-            else:
-                obj.location = tuple(origin)
+            # 位置：作者坐标 = VEH_XYZ + 原点，再按轴向模式转到 Blender 坐标
+            xp_pos = att.xyz if att.xyz is not None else (0.0, 0.0, 0.0)
+            world = (xp_pos[0] + origin[0], xp_pos[1] + origin[1], xp_pos[2] + origin[2])
+            obj.location = acftool.to_blender(world, axis)
 
             obj["snd_uid"] = int(att.index)
             obj["snd_kind"] = att.kind
@@ -132,8 +143,8 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
 
         self.report(
             {"INFO"},
-            "导入 %d 个 attachment（%d 个 space）· 原点 %s = (%.3f, %.3f, %.3f)"
-            % (made, len(doc.spaces), origin_src, origin[0], origin[1], origin[2]),
+            "导入 %d 个 attachment（%d 个 space）· 原点 %s = (%.3f, %.3f, %.3f) · 轴向 %s"
+            % (made, len(doc.spaces), origin_src, origin[0], origin[1], origin[2], axis),
         )
         return {"FINISHED"}
 
@@ -162,6 +173,7 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
             return {"CANCELLED"}
 
         origin = tuple(scene.get(PROP_ORIGIN, (0.0, 0.0, 0.0)))
+        axis = scene.get(PROP_AXIS, "XP2B")
         by_uid = {}
         for obj in snd_objects(scene):
             by_uid[int(obj.get("snd_uid", -1))] = obj
@@ -174,8 +186,8 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
             # 只有原本就有 VEH_XYZ 的才回写坐标（VEH_PART 的没有坐标可写）
             xyz = None
             if att.xyz is not None and obj.get("snd_has_xyz", True):
-                loc = obj.location
-                xyz = (loc[0] - origin[0], loc[1] - origin[1], loc[2] - origin[2])
+                world = acftool.from_blender(tuple(obj.location), axis)
+                xyz = (world[0] - origin[0], world[1] - origin[1], world[2] - origin[2])
             changed = doc.patch_attachment(
                 att, xyz=xyz,
                 the=obj.get("snd_the"), psi=obj.get("snd_psi"), phi=obj.get("snd_phi"),
@@ -208,9 +220,10 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
                 bits = str(obj.get("snd_part")).split()
                 if len(bits) >= 2:
                     part = (bits[0], int(bits[1]))
+            world = acftool.from_blender(tuple(loc), axis)
             doc.append_attachment(
                 kind=kind, name=name,
-                xyz=(loc[0] - origin[0], loc[1] - origin[1], loc[2] - origin[2]),
+                xyz=(world[0] - origin[0], world[1] - origin[1], world[2] - origin[2]),
                 remark=obj.name,
                 the=obj.get("snd_the"), psi=obj.get("snd_psi"), phi=obj.get("snd_phi"),
                 part=part, dref_idx=obj.get("snd_dref_idx"), flags=flags, conds=conds,

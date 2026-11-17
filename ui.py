@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import bpy
 
-from .operators import PROP_ORIGIN, PROP_ORIGIN_SRC, PROP_PATH
+from .operators import PROP_AXIS, PROP_ORIGIN, PROP_ORIGIN_SRC, PROP_PATH
 
 
 class SND_PT_panel(bpy.types.Panel):
@@ -24,6 +24,7 @@ class SND_PT_panel(bpy.types.Panel):
             if origin:
                 col.label(text="原点 %s" % scene.get(PROP_ORIGIN_SRC, "?"))
                 col.label(text="(%.3f, %.3f, %.3f) m" % tuple(origin))
+            col.label(text="轴向 %s" % scene.get(PROP_AXIS, "XP2B"))
         else:
             col.label(text="未导入 .snd", icon="INFO")
 
