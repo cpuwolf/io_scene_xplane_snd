@@ -89,6 +89,9 @@ jobs:
       - name: origin resolution and axis roundtrip
         run: "\"$HOME/blender/blender\" -b --factory-startup -P tests/origin.py"
 
+      - name: duplicate (Shift+D 副本要变成新增 attachment)
+        run: "blender -b --factory-startup -P tests/duplicate.py"
+
       - name: upload extension zip
         uses: actions/upload-artifact@v4
         with:

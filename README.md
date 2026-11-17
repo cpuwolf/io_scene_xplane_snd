@@ -73,6 +73,30 @@ L148  - \tVEH_XYZ 0.000 1.264 -0.559
 L148  + \tVEH_XYZ 0.000 1.364 -0.559
 ```
 
+## 为什么 custom properties 挂在 Speaker 的 Object 上，而不是 Speaker 数据块上
+
+`.snd` 里的一条 attachment 是"**一次摆放**"（某个事件，在这架飞机的这个位置、这组条件下），
+不是"一种声音"。而 Blender 的 Speaker **数据块是可以共享的**：
+
+```python
+dup = bpy.data.objects.new("copy", src.data)
+dup.data == src.data          # True —— Alt+D / 手动共享数据就长这样
+```
+
+如果事件名、条件、VEH_PART 挂在 `obj.data` 上，这两个对象就共用同一组 attachment 元数据，
+改一个等于改两个，导出必然打架。挂在 Object 上天然按实例独立。
+
+其它理由：
+
+- **位置本来就在 Object 上**（`obj.location`）。把名字/条件放 data、位置放 object，
+  等于把同一条 attachment 劈成两半，用户改的时候要在两个面板之间来回跳。
+- **换 Speaker 数据块不会丢元数据**（Object ▸ 数据里换别的 speaker，属性还在对象上）。
+- `Object ▸ Custom Properties` 是导出器与脚本读 per-instance 元数据的惯例位置。
+
+代价也是真的：`Shift+D` 复制出来的副本会带着同样的 `snd_uid`。所以导入时把
+`uid → 对象名` 记进场景属性 `xplane_snd_owners`，导出时**按名字认领原对象**，
+名字对不上的副本当**新增 attachment** 追加到文件末尾（`tests/duplicate.py` 覆盖）。
+
 ## 用法
 
 - **把 `.snd` 直接拖进 3D 视图**（`FileHandler` 注册了 `.snd`）→ 不会弹文件对话框，直接导入

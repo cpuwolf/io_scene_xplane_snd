@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 from pathlib import Path
 
@@ -21,6 +22,7 @@ PROP_SRC_B64 = "xplane_snd_source_b64"
 PROP_ORIGIN = "xplane_snd_origin"
 PROP_ORIGIN_SRC = "xplane_snd_origin_source"
 PROP_AXIS = "xplane_snd_axis"
+PROP_OWNERS = "xplane_snd_owners"      # {"uid": "对象名"}，用来区分"原对象"和 Shift+D 副本
 
 
 # ---------------------------------------------------------------- helpers
@@ -110,6 +112,7 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
         if coll.name not in scene.collection.children:
             scene.collection.children.link(coll)
 
+        owners = {}
         made = 0
         for att in doc.attachments:
             if att.name is None:
@@ -129,6 +132,7 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
             obj.location = acftool.to_blender(world, axis)
 
             obj["snd_uid"] = int(att.index)
+            owners[str(int(att.index))] = obj.name
             obj["snd_kind"] = att.kind
             obj["snd_event"] = att.name
             obj["snd_xyz"] = [float(v) for v in (att.xyz or (0.0, 0.0, 0.0))]
@@ -149,6 +153,8 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
             if att.conds:
                 obj["snd_conds"] = "\n".join("%s %s" % (k, v) for k, v in att.conds)
             made += 1
+
+        scene[PROP_OWNERS] = json.dumps(owners)
 
         for w in doc.warnings:
             self.report({"WARNING"}, w)
@@ -188,9 +194,33 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
 
         origin = tuple(scene.get(PROP_ORIGIN, (0.0, 0.0, 0.0)))
         axis = scene.get(PROP_AXIS, "XP2B")
+
+        # uid 归谁：同一个 uid 可能有多个对象（用户 Shift+D 复制出来的副本）。
+        # 导入时把 uid -> 对象名 记进场景，导出时按名字认领**原对象**，
+        # 名字对不上的（副本 / 改名后的新对象）一律当新增处理。
+        # 没有记录（老场景）或名字被改过时，退化成"第一个遇到的对象算原对象"。
+        try:
+            owners = json.loads(scene.get(PROP_OWNERS, "{}") or "{}")
+        except ValueError:
+            owners = {}
         by_uid = {}
+        extras = []
+        dup_uid = 0
         for obj in snd_objects(scene):
-            by_uid[int(obj.get("snd_uid", -1))] = obj
+            uid = int(obj.get("snd_uid", -1))
+            if not (0 <= uid < len(doc.attachments)):
+                extras.append(obj)
+                continue
+            want = owners.get(str(uid))
+            if want is None or obj.name == want:
+                if uid in by_uid:
+                    dup_uid += 1
+                    extras.append(obj)
+                else:
+                    by_uid[uid] = obj
+            else:
+                dup_uid += 1
+                extras.append(obj)
 
         patched, changed_fields = 0, []
         for att in doc.attachments:
@@ -210,12 +240,9 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
                 patched += 1
                 changed_fields.append((att.name, changed))
 
-        # 新增的 Speaker（没有对应 attachment）追加到文件末尾
+        # 新增的 Speaker（没有对应 attachment，或 uid 与别人撞车）追加到文件末尾
         added = 0
-        for obj in snd_objects(scene):
-            uid = int(obj.get("snd_uid", -1))
-            if 0 <= uid < len(doc.attachments):
-                continue
+        for obj in extras:
             name = obj.get("snd_event")
             if not name:
                 continue
@@ -242,7 +269,9 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
                 the=obj.get("snd_the"), psi=obj.get("snd_psi"), phi=obj.get("snd_phi"),
                 part=part, dref_idx=obj.get("snd_dref_idx"), flags=flags, conds=conds,
             )
-            obj["snd_uid"] = int(doc.attachments[-1].index)
+            uid = int(doc.attachments[-1].index)
+            obj["snd_uid"] = uid
+            owners[str(uid)] = obj.name
             added += 1
 
         try:
@@ -252,6 +281,12 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
             return {"CANCELLED"}
 
         scene[PROP_PATH] = self.filepath
+        scene[PROP_OWNERS] = json.dumps(owners)
+        if dup_uid:
+            self.report({"WARNING"},
+                        "有 %d 个对象与已有 attachment 共用 snd_uid（多半是 Shift+D 复制出来的），"
+                        "已按新增处理" % dup_uid)
+
         self.report(
             {"INFO"},
             "已写出 %s：改了 %d 个 attachment%s%s"
