@@ -61,7 +61,21 @@ Source and issue tracker: https://github.com/cpuwolf/io_scene_xplane_snd
 
 首版，无。
 
-## Preview image
+## Icon（提交表单的图标字段）
+
+| 文件 | 底色 | 用在哪 |
+|---|---|---|
+| `branding/icon_light_256.png` | `#EEF0F3` | 商店列表页（页面底 `#25282D`，浅底才跳得出来） |
+| `branding/icon_dark_256.png` | `#16191D` | README / GitHub / 浅色背景的文档 |
+
+- 256×256 PNG，圆角 46/256 已经画进文件（平台只再加 3 px）；展示尺寸是详情页 32、
+  作者页 48，所以**按 32 px 验收**：扬声器锥 + 两道弧的剪影在 32 px 下仍认得出。
+- 只有几何图形，没有文字、没有 Blender logo、没有真机外形。
+- `branding/make_icon.py` 生成两份 SVG 源；PNG 由无头 Chrome 按 256 渲染（本机没有
+  svg→png 转换器）。换色改脚本里的颜色常量即可。
+- `/branding/` 在 manifest 的 `paths_exclude_pattern` 里，不会进安装包。
+
+## Preview image（详情页大图）
 
 - 一张 16:9、1600×900 的截图；平台自己生成 640×360 卡片和 1920×1080 大图。
 - 内容：导入后的 3D 视图（Speaker 锥体落在座舱里）+ Outliner 里 `SND <file> / <event>`
