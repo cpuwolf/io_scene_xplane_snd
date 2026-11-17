@@ -31,6 +31,7 @@ paths_exclude_pattern = [
   "/dist/",
   "/__pycache__/",
   "/.github/",
+  "/doc/",
   "/.gitignore",
   "/.DS_Store",
   "/*.blend1",
