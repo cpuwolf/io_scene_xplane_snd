@@ -8,6 +8,7 @@
   * 未知指令（顶层 + attachment 内）必须原样保留
   * 全部条件指令、标志位、VEH_PART / PARAM_DREF_IDX / 朝向
   * 多个 sound space（AABB + SPHERE）、REF_POINT_ACF
+  * 事件与 attachment 的 1:N（三个 attachment 共用一个 EVENT_NAME）
 
   python3 tests/make_fixtures.py
 """
@@ -117,6 +118,42 @@ END_SOUND_ATTACHMENT
 # 结尾是注释，没有空行
 """
 
+# 1:N：一个 EVENT_NAME 下挂 3 个位置（真实 .snd 的常态，比如一排开关）
+N_TO_ONE = """A
+1000
+ACF_SOUNDS
+
+BEGIN_SOUND_ATTACHMENT
+\tEVENT_NAME /fixture/switch/row
+\tVEH_XYZ 0.100 1.000 -0.500
+\tPARAM_DREF_IDX 0
+\tEVENT_START_COND sim/fixture/switch[0] == 1
+\tEVENT_END_COND sim/fixture/switch[0] == 0
+END_SOUND_ATTACHMENT
+
+BEGIN_SOUND_ATTACHMENT
+\tEVENT_NAME /fixture/switch/row
+\tVEH_XYZ 0.200 1.000 -0.500
+\tPARAM_DREF_IDX 1
+\tEVENT_START_COND sim/fixture/switch[1] == 1
+\tEVENT_END_COND sim/fixture/switch[1] == 0
+END_SOUND_ATTACHMENT
+
+BEGIN_SOUND_ATTACHMENT
+\tEVENT_NAME /fixture/switch/row
+\tVEH_XYZ 0.300 1.000 -0.500
+\tPARAM_DREF_IDX 2
+\tEVENT_START_COND sim/fixture/switch[2] == 1
+\tEVENT_END_COND sim/fixture/switch[2] == 0
+END_SOUND_ATTACHMENT
+
+BEGIN_SOUND_ATTACHMENT
+\tSNAPSHOT_NAME /fixture/ducker
+\tEVENT_START_COND sim/time/total_flight_time_sec > 0
+\tEVENT_END_COND sim/time/total_flight_time_sec > 5
+END_SOUND_ATTACHMENT
+"""
+
 UNKNOWN_TOP = """A
 1000
 ACF_SOUNDS
@@ -144,3 +181,4 @@ write("full.snd", FULL)
 write("full_crlf.snd", FULL, crlf=True)
 write("no_trailing_newline.snd", MINIMAL, trailing_newline=False)
 write("unknown_only.snd", UNKNOWN_TOP)
+write("events.snd", N_TO_ONE)

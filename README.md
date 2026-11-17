@@ -97,6 +97,31 @@ dup.data == src.data          # True —— Alt+D / 手动共享数据就长这�
 `uid → 对象名` 记进场景属性 `xplane_snd_owners`，导出时**按名字认领原对象**，
 名字对不上的副本当**新增 attachment** 追加到文件末尾（`tests/duplicate.py` 覆盖）。
 
+## 事件与 attachment 是 1:N，Blender 里怎么体现
+
+`.snd` 里 `EVENT_NAME` 是"声音"，`VEH_XYZ` 是"这个声音在这架飞机上的第 N 个发声点"，
+所以一个事件正常会挂很多个位置。C90B 实测：
+
+| 指标 | 值 |
+|---|---|
+| attachment | 436 |
+| 不同 EVENT_NAME | 96 |
+| 每组平均 / 中位 / 最大 | 4.54 / 1 / **39**（`garmin` 39 个按钮） |
+| 多成员组里条件完全一致的 | **0 / 38**（每个位置的条件都带自己的参数下标，所以条件必须留在对象上） |
+
+导入时（选项 `按事件分组`，默认开）每个事件会建一个 Collection：
+`SND C90B.snd / model / kingair_c90b / switches / pushbutton_sm`，一眼能看出哪几个是同一个事件。
+
+侧栏 `X-Plane ▸ X-Plane SND ▸ 事件` 有一个列表（事件名 + 该事件的 Speaker 个数），
+选中行后可以：
+
+- **选中**：把该事件的全部 Speaker 一起选中
+- **隔离**：进局部视图只看这一个事件（再按一次退出）
+- **整组改名**：改所有对象的 `snd_event`，**写回 .snd 时会改掉那一行**（`tests/events.py` 覆盖）
+
+条件（`EVENT_START_COND` 等）仍然逐对象保存 —— 上面的统计说明组内条件几乎都不相同，
+强行提到"事件级"会丢信息。
+
 ## 用法
 
 - **把 `.snd` 直接拖进 3D 视图**（`FileHandler` 注册了 `.snd`）→ 不会弹文件对话框，直接导入

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import bpy
 from bpy.props import (BoolProperty, CollectionProperty, EnumProperty,
-                       FloatVectorProperty, StringProperty)
+                       FloatVectorProperty, IntProperty, StringProperty)
 from bpy.types import OperatorFileListElement
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 
@@ -57,6 +57,142 @@ def _xyz_prop(obj):
     return tuple(float(x) for x in v) if v else None
 
 
+# ---------------------------------------------------------------- events（N:1 关系）
+class SND_EventItem(bpy.types.PropertyGroup):
+    event: StringProperty(default="")
+    count: IntProperty(default=0)
+
+
+def register_props():
+    bpy.types.Scene.snd_events = CollectionProperty(type=SND_EventItem)
+    bpy.types.Scene.snd_events_index = IntProperty(default=0)
+    bpy.types.Scene.snd_event_new = StringProperty(name="新事件名", default="")
+
+
+def unregister_props():
+    for attr in ("snd_events", "snd_events_index", "snd_event_new"):
+        if hasattr(bpy.types.Scene, attr):
+            delattr(bpy.types.Scene, attr)
+
+def event_groups(scene):
+    """scene 里的对象按 snd_event 分组：{事件名: [对象...]}（保持导入顺序）。"""
+    groups = {}
+    for obj in snd_objects(scene):
+        name = obj.get("snd_event")
+        if not name:
+            continue
+        groups.setdefault(str(name), []).append(obj)
+    return groups
+
+
+def refresh_events(scene):
+    """把场景里的事件列表刷进 Scene.snd_events（面板用）。"""
+    groups = event_groups(scene)
+    items = scene.snd_events
+    items.clear()
+    for name in sorted(groups):
+        item = items.add()
+        item.name = name          # 注意：CollectionProperty 的 name 会被去重，所以再存一份
+        item.event = name
+        item.count = len(groups[name])
+    scene.snd_events_index = min(scene.snd_events_index, max(0, len(items) - 1))
+    return len(items)
+
+
+class SND_OT_refresh_events(bpy.types.Operator):
+    """刷新事件列表"""
+    bl_idname = "snd.refresh_events"
+    bl_label = "刷新事件列表"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        n = refresh_events(context.scene)
+        self.report({"INFO"}, "共 %d 个事件" % n)
+        return {"FINISHED"}
+
+
+def _selected_event(scene):
+    idx = scene.snd_events_index
+    if 0 <= idx < len(scene.snd_events):
+        return scene.snd_events[idx].event
+    return None
+
+
+class SND_OT_select_event(bpy.types.Operator):
+    """选中这个事件的全部 Speaker"""
+    bl_idname = "snd.select_event"
+    bl_label = "选中该事件"
+    bl_options = {"REGISTER", "UNDO"}
+
+    event: StringProperty(default="")
+
+    def execute(self, context):
+        name = self.event or _selected_event(context.scene)
+        objs = event_groups(context.scene).get(name, [])
+        if not objs:
+            self.report({"WARNING"}, "没有对象属于事件 %s" % name)
+            return {"CANCELLED"}
+        for obj in context.scene.objects:
+            obj.select_set(False)
+        for obj in objs:
+            obj.select_set(True)
+        if context.view_layer.objects.active is None or context.view_layer.objects.active not in objs:
+            context.view_layer.objects.active = objs[0]
+        self.report({"INFO"}, "选中 %d 个对象（%s）" % (len(objs), name))
+        return {"FINISHED"}
+
+
+class SND_OT_isolate_event(bpy.types.Operator):
+    """只显示这个事件的 Speaker（局部视图开/关）"""
+    bl_idname = "snd.isolate_event"
+    bl_label = "隔离该事件"
+    bl_options = {"REGISTER", "UNDO"}
+
+    event: StringProperty(default="")
+
+    def execute(self, context):
+        if context.space_data is None or context.space_data.type != "VIEW_3D":
+            self.report({"WARNING"}, "请在 3D 视口里用")
+            return {"CANCELLED"}
+        bpy.ops.object.select_all(action="DESELECT")
+        res = SND_OT_select_event.execute(self, context)
+        if "FINISHED" not in res:
+            return res
+        bpy.ops.view3d.localview()
+        return {"FINISHED"}
+
+
+class SND_OT_rename_event(bpy.types.Operator):
+    """把这个事件下所有 Speaker 的 EVENT_NAME 改成新值（只改 Blender 里的数据，写回时生效）"""
+    bl_idname = "snd.rename_event"
+    bl_label = "整组改名"
+    bl_options = {"REGISTER", "UNDO"}
+
+    event: StringProperty(default="")
+    new_name: StringProperty(default="")
+
+    def execute(self, context):
+        old = self.event or _selected_event(context.scene)
+        # 面板上的输入框是 Scene.snd_event_new，操作符自己的 new_name 只在脚本调用时用
+        # 注意：snd_event_new 是注册过的 RNA 属性，scene.get() 读不到，必须 getattr
+        new = (self.new_name or getattr(context.scene, "snd_event_new", "") or "").strip()
+        if not old or not new:
+            self.report({"WARNING"}, "事件名不能为空")
+            return {"CANCELLED"}
+        objs = event_groups(context.scene).get(old, [])
+        for obj in objs:
+            obj["snd_event"] = new
+        scene = context.scene
+        if scene.get(PROP_PATH):
+            coll = bpy.data.collections.get("SND " + os.path.basename(scene[PROP_PATH]) + " / "
+                                            + old.strip("/").replace("/", " / "))
+            if coll is not None:
+                coll["snd_event"] = new
+        refresh_events(scene)
+        self.report({"INFO"}, "%d 个对象改成 %s" % (len(objs), new))
+        return {"FINISHED"}
+
+
 # ---------------------------------------------------------------- import
 class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
     """导入 X-Plane .snd（每个 attachment 一个 Speaker）"""
@@ -68,6 +204,11 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
     filter_glob: StringProperty(default="*.snd", options={"HIDDEN"})
     # 拖拽导入时 Blender 会填这个集合（ImportHelper 本身没有 files，得自己声明）
     files: CollectionProperty(type=OperatorFileListElement, options={"HIDDEN", "SKIP_SAVE"})
+    group_events: BoolProperty(
+        name="按事件分组",
+        description="同一个 EVENT_NAME 的 attachment 归到一个 Collection 里（.snd 里 event:attachment 是 1:N）",
+        default=True,
+    )
     make_speakers: BoolProperty(
         name="用 Speaker 对象",
         description="关闭则用 Empty（Speaker 可以试听、能显示锥体朝向）",
@@ -113,6 +254,19 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
             scene.collection.children.link(coll)
 
         owners = {}
+        ev_colls = {}
+
+        def event_coll(event_name):
+            """一个 EVENT_NAME 一个 collection，挂在 "SND <file>" 下面。"""
+            key = event_name.strip("/").replace("/", " / ") or "unnamed"
+            got = ev_colls.get(key) or bpy.data.collections.get(coll_name + " / " + key)
+            if got is None:
+                got = bpy.data.collections.new(coll_name + " / " + key)
+                got["snd_event"] = event_name
+                coll.children.link(got)
+            ev_colls[key] = got
+            return got
+
         made = 0
         for att in doc.attachments:
             if att.name is None:
@@ -124,7 +278,7 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
                 obj = bpy.data.objects.new(base, data)
             else:
                 obj = bpy.data.objects.new(base, None)
-            coll.objects.link(obj)
+            (event_coll(att.name) if self.group_events else coll).objects.link(obj)
 
             # 位置：作者坐标 = VEH_XYZ + 原点，再按轴向模式转到 Blender 坐标
             xp_pos = att.xyz if att.xyz is not None else (0.0, 0.0, 0.0)
@@ -155,6 +309,7 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
             made += 1
 
         scene[PROP_OWNERS] = json.dumps(owners)
+        refresh_events(scene)
 
         for w in doc.warnings:
             self.report({"WARNING"}, w)
@@ -233,7 +388,7 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
                 world = acftool.from_blender(tuple(obj.location), axis)
                 xyz = (world[0] - origin[0], world[1] - origin[1], world[2] - origin[2])
             changed = doc.patch_attachment(
-                att, xyz=xyz,
+                att, name=obj.get("snd_event"), xyz=xyz,
                 the=obj.get("snd_the"), psi=obj.get("snd_psi"), phi=obj.get("snd_phi"),
             )
             if changed:
@@ -282,6 +437,7 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
 
         scene[PROP_PATH] = self.filepath
         scene[PROP_OWNERS] = json.dumps(owners)
+        refresh_events(scene)
         if dup_uid:
             self.report({"WARNING"},
                         "有 %d 个对象与已有 attachment 共用 snd_uid（多半是 Shift+D 复制出来的），"
@@ -329,4 +485,9 @@ class SND_OT_mute_all(bpy.types.Operator):
         return {"FINISHED"}
 
 
-CLASSES = (IMPORT_OT_xplane_snd, EXPORT_OT_xplane_snd, SND_OT_solo, SND_OT_mute_all)
+CLASSES = (
+    SND_EventItem,
+    SND_OT_refresh_events,
+    SND_OT_select_event,
+    SND_OT_isolate_event,
+    SND_OT_rename_event,IMPORT_OT_xplane_snd, EXPORT_OT_xplane_snd, SND_OT_solo, SND_OT_mute_all)

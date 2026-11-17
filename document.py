@@ -213,9 +213,19 @@ class Document:
         eol = "\r\n" if old.endswith("\r\n") else ("\n" if old.endswith("\n") else "")
         self.lines[line_no] = new_raw.rstrip("\r\n") + eol
 
-    def patch_attachment(self, att: Attachment, *, xyz=None, the=None, psi=None, phi=None):
+    def patch_attachment(self, att: Attachment, *, name=None, xyz=None, the=None, psi=None, phi=None):
         """只改这次真正变了的字段；每一处都沿用原来的缩进。"""
         changed = []
+        if name is not None and att.name is not None and str(name) != att.name:
+            key = "SNAPSHOT_NAME" if att.kind == "snapshot" else "EVENT_NAME"
+            fls = att.field_lines(key)
+            if fls:
+                fl = fls[0]
+                new_name = str(name)
+                self.set_line(fl.line_no, "%s%s %s" % (fl.indent, key, new_name))
+                fl.rest = new_name
+                att.name = new_name
+                changed.append(key)
         if xyz is not None and att.xyz is not None:
             newv = tuple(round(float(v), 3) for v in xyz)
             if newv != tuple(att.xyz):

@@ -37,12 +37,14 @@ CLASSES = operators.CLASSES + ui.CLASSES + filehandlers.CLASSES
 def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
+    operators.register_props()
     bpy.types.TOPBAR_MT_file_import.append(_menu_import)
     bpy.types.TOPBAR_MT_file_export.append(_menu_export)
 
 
 def unregister():
     bpy.types.TOPBAR_MT_file_import.remove(_menu_import)
+    operators.unregister_props()
     bpy.types.TOPBAR_MT_file_export.remove(_menu_export)
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)

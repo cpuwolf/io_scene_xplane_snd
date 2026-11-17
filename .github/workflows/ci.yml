@@ -92,6 +92,9 @@ jobs:
       - name: duplicate (Shift+D 副本要变成新增 attachment)
         run: "blender -b --factory-startup -P tests/duplicate.py"
 
+      - name: events (EVENT_NAME 与 attachment 的 1:N)
+        run: "blender -b --factory-startup -P tests/events.py"
+
       - name: upload extension zip
         uses: actions/upload-artifact@v4
         with:

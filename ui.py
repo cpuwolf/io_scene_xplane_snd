@@ -1,9 +1,18 @@
-"""侧栏面板 + 菜单项注册由 __init__ 调用。"""
+"""侧栏面板：文件信息 + 事件（N:1）列表。菜单项注册由 __init__ 调用。"""
 from __future__ import annotations
 
 import bpy
 
 from .operators import PROP_AXIS, PROP_ORIGIN, PROP_ORIGIN_SRC, PROP_PATH
+
+
+class SND_UL_events(bpy.types.UIList):
+    """一个 EVENT_NAME 一行：左边事件路径，右边这个事件有几个 Speaker。"""
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.label(text=item.event, icon="SOUND")
+        row.label(text="%d" % item.count)
 
 
 class SND_PT_panel(bpy.types.Panel):
@@ -38,5 +47,22 @@ class SND_PT_panel(bpy.types.Panel):
         row.operator("sound.xplane_snd_solo", text="Solo 选中", icon="SOLO_ON")
         row.operator("sound.xplane_snd_mute_all", text="全部静音", icon="MUTE_IPO_OFF")
 
+        # ---------------- 事件（.snd 里 EVENT_NAME : VEH_XYZ 是 1:N）
+        box = layout.box()
+        head = box.row(align=True)
+        head.label(text="事件 %d 个" % len(scene.snd_events), icon="PRESET")
+        head.operator("snd.refresh_events", text="", icon="FILE_REFRESH")
+        if len(scene.snd_events):
+            box.template_list("SND_UL_events", "", scene, "snd_events",
+                              scene, "snd_events_index", rows=6)
+            row = box.row(align=True)
+            row.operator("snd.select_event", text="选中", icon="RESTRICT_SELECT_OFF")
+            row.operator("snd.isolate_event", text="隔离", icon="VIEW3D")
+            row = box.row(align=True)
+            row.prop(scene, "snd_event_new", text="")
+            row.operator("snd.rename_event", text="整组改名", icon="SORTALPHA")
+        else:
+            box.label(text="（导入后自动列出）")
 
-CLASSES = (SND_PT_panel,)
+
+CLASSES = (SND_UL_events, SND_PT_panel)

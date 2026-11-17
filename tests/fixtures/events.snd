@@ -1,0 +1,33 @@
+A
+1000
+ACF_SOUNDS
+
+BEGIN_SOUND_ATTACHMENT
+	EVENT_NAME /fixture/switch/row
+	VEH_XYZ 0.100 1.000 -0.500
+	PARAM_DREF_IDX 0
+	EVENT_START_COND sim/fixture/switch[0] == 1
+	EVENT_END_COND sim/fixture/switch[0] == 0
+END_SOUND_ATTACHMENT
+
+BEGIN_SOUND_ATTACHMENT
+	EVENT_NAME /fixture/switch/row
+	VEH_XYZ 0.200 1.000 -0.500
+	PARAM_DREF_IDX 1
+	EVENT_START_COND sim/fixture/switch[1] == 1
+	EVENT_END_COND sim/fixture/switch[1] == 0
+END_SOUND_ATTACHMENT
+
+BEGIN_SOUND_ATTACHMENT
+	EVENT_NAME /fixture/switch/row
+	VEH_XYZ 0.300 1.000 -0.500
+	PARAM_DREF_IDX 2
+	EVENT_START_COND sim/fixture/switch[2] == 1
+	EVENT_END_COND sim/fixture/switch[2] == 0
+END_SOUND_ATTACHMENT
+
+BEGIN_SOUND_ATTACHMENT
+	SNAPSHOT_NAME /fixture/ducker
+	EVENT_START_COND sim/time/total_flight_time_sec > 0
+	EVENT_END_COND sim/time/total_flight_time_sec > 5
+END_SOUND_ATTACHMENT
