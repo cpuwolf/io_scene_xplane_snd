@@ -18,13 +18,21 @@ export_ok = hasattr(bpy.ops.export_scene, "xplane_snd")
 panel = hasattr(bpy.types, "SND_PT_panel")
 fh = getattr(bpy.types, "SND_FH_import", None)
 fh_ext = getattr(fh, "bl_file_extensions", "") if fh else ""
+fh_poll = getattr(fh, "poll_drop", None) if fh else None
+fh_drop_ok = bool(fh_poll and fh_poll(bpy.context))
 
-print("SMOKE enabled=%s import=%s export=%s panel=%s filehandler=%r" % (
-    enabled, import_ok, export_ok, panel, fh_ext), flush=True)
+print("SMOKE enabled=%s import=%s export=%s panel=%s filehandler=%r poll_drop=%s" % (
+    enabled, import_ok, export_ok, panel, fh_ext, fh_drop_ok), flush=True)
 
 if ".snd" not in (fh_ext or ""):
     print("SMOKE 失败：FileHandler 没注册（拖拽 .snd 不会生效）", flush=True)
     sys.exit(1)
+
+if not fh_poll:
+    print("SMOKE 失败：FileHandler 缺 poll_drop —— 拖进视口不会有反应", flush=True)
+    sys.exit(1)
+if not fh_drop_ok:
+    print("SMOKE 警告：poll_drop 在当前上下文返回 False（无头环境可能正常）", flush=True)
 
 # 模拟"拖拽导入"：Blender 的 FileHandler 会带 files 列表调 INVOKE_DEFAULT，
 # 我们的 invoke 在这里应该直接 execute，不弹文件对话框。
