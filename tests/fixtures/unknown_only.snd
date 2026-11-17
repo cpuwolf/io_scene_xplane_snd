@@ -1,0 +1,6 @@
+A
+1000
+ACF_SOUNDS
+# 只有未知指令，没有任何 block
+NEW_DIRECTIVE_WITHOUT_DOCS a b c
+

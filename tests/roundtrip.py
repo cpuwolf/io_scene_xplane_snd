@@ -71,13 +71,18 @@ def move_one(src: Path, delta=0.1, axis="XP2B"):
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     axis = "RAW" if "--raw" in argv else "XP2B"
-    argv = [a for a in argv if not a.startswith("--")]
+    paths = [a for a in argv if not a.startswith("--")]
     print("AXIS", axis, flush=True)
-    if argv:
-        files = [Path(p) for p in argv]
+    fixtures = sorted((Path(__file__).resolve().parent / "fixtures").glob("*.snd"))
+    xplane = HOME / "X-Plane 12"
+    if paths:
+        files = [Path(p) for p in paths]
+    elif "--fixtures" in argv or not xplane.is_dir():
+        files = fixtures
+        print("SOURCE fixtures (%d files)" % len(files), flush=True)
     else:
-        root = HOME / "X-Plane 12"
-        files = sorted(root.rglob("*.snd"))
+        files = sorted(xplane.rglob("*.snd"))
+        print("SOURCE X-Plane 12 (%d files)" % len(files), flush=True)
 
     ok = bad = 0
     for f in files:
@@ -96,7 +101,10 @@ def main():
 
     # 改一个点，验证 patch 只动一行
     probe = HOME / "X-Plane 12/Aircraft/Laminar Research/Beechcraft King Air C90B/fmod/C90B.snd"
-    if probe.is_file():
+    if not probe.is_file():
+        cand = [f for f in fixtures if f.name == "full.snd"]
+        probe = cand[0] if cand else None
+    if probe and probe.is_file():
         res = move_one(probe, axis=axis)
         if res:
             same_len, diff = res

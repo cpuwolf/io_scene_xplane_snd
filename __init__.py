@@ -21,15 +21,6 @@ from .operators import (
     SND_OT_solo,
 )
 
-bl_info = {
-    "name": "X-Plane SND (.snd) Import/Export",
-    "author": "cpuwolf",
-    "version": (0, 1, 0),
-    "blender": (4, 2, 0),
-    "location": "File > Import/Export > X-Plane SND；3D 视图侧栏 X-Plane > X-Plane SND",
-    "description": "导入/导出 X-Plane .snd（每个 attachment 一个 Speaker，可 solo 试听），不依赖 XPlane2Blender",
-    "category": "Import-Export",
-}
 
 
 def _menu_import(self, context):

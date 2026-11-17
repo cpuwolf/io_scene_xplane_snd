@@ -8,7 +8,7 @@ name = "X-Plane SND Import/Export"
 tagline = "Edit X-Plane .snd sound attachments in 3D"
 maintainer = "cpuwolf"
 type = "add-on"
-tags = ["Import-Export", "Game Engine"]
+tags = ["Import-Export"]
 
 website = "https://github.com/cpuwolf/io_scene_xplane_snd"
 license = ["SPDX:GPL-3.0-or-later"]

@@ -1,0 +1,94 @@
+A
+1000
+ACF_SOUNDS
+
+#################################################
+# fixture full sound bank                                       #
+# 0.1.0                                         #
+# ci test fixture                               #
+#################################################
+
+
+DISABLE_LEGACY_ALERT_SOUNDS
+REQUIRES_BANK Master Bank
+REF_POINT_ACF 1.0 -2.0
+
+# Sound spaces
+#############################################################################################
+BEGIN_SOUND_SPACE
+	SOUND_INDEX 0
+	BLEND_DEPTH 0.03
+	AABB -0.800 0.100 -1.183 0.800 1.570 3.917
+	SPHERE 0.0 1.2 -1.5 0.9
+END_SOUND_SPACE
+
+BEGIN_SOUND_SPACE
+	SOUND_INDEX 1
+	SPHERE 1.0 0.5 2.0 0.4
+END_SOUND_SPACE
+
+# Snapshots
+#############################################################################################
+
+# -------------------- audio ducker ---------------------
+BEGIN_SOUND_ATTACHMENT
+	SNAPSHOT_NAME /ducker
+	EVENT_START_COND sim/time/total_flight_time_sec > 0
+	EVENT_END_COND sim/time/total_flight_time_sec > 10
+END_SOUND_ATTACHMENT
+
+# -------------------- engine layers ---------------------
+# 多空格分隔 + 朝向三个分量
+BEGIN_SOUND_ATTACHMENT
+	EVENT_NAME /fixture/engine/turbine
+	VEH_XYZ   0.000    1.264   -0.559
+	VEH_THE 1.500
+	VEH_PSI -2.250
+	VEH_PHI 0.125
+	VEH_PART engine 0
+	PARAM_DREF_IDX 0
+	EVENT_ALWAYS
+	EVENT_ALLOWED_FOR_AI
+	EVENT_POLYPHONIC
+	EVENT_START_COND sim/flightmodel2/engines/N1_percent[0] >= 12.5
+	EVENT_END_COND sim/flightmodel2/engines/N1_percent[0] < 5
+	CUE_TRIGGER_COND sim/flightmodel2/engines/N1_percent[0] > 90
+END_SOUND_ATTACHMENT
+
+# 4 空格缩进（手写风格）
+BEGIN_SOUND_ATTACHMENT
+    EVENT_NAME /fixture/switches/pushbutton
+    VEH_XYZ 0.296 0.798 -0.667
+    EVENT_CMND_DOWN sim/fixture/push_button_down
+END_SOUND_ATTACHMENT
+
+BEGIN_SOUND_ATTACHMENT
+	EVENT_NAME /fixture/switches/hold
+	VEH_XYZ -0.447 1.034 -0.553
+	EVENT_CMND_HOLD_STOP sim/fixture/hold_stop
+	EVENT_AUTO_END_FROM_START_COND
+END_SOUND_ATTACHMENT
+
+BEGIN_SOUND_ATTACHMENT
+	EVENT_NAME /fixture/switches/hold_cue
+	VEH_XYZ 0.0 1.0 -1.0
+	EVENT_CMND_HOLD_CUE sim/fixture/hold_cue
+END_SOUND_ATTACHMENT
+
+BEGIN_SOUND_ATTACHMENT
+	EVENT_NAME /fixture/switches/up
+	VEH_XYZ 0.0 1.0 -1.0
+	VEH_THE 5.0
+	EVENT_CMND_UP sim/fixture/up
+END_SOUND_ATTACHMENT
+
+# 未知指令：必须原样保留
+SOME_FUTURE_DIRECTIVE 1 2 3
+
+BEGIN_SOUND_ATTACHMENT
+	EVENT_NAME /fixture/future/thing
+	VEH_XYZ 0.0 0.0 0.0
+	ANOTHER_UNKNOWN_DIRECTIVE alpha beta
+END_SOUND_ATTACHMENT
+
+# 结尾是注释，没有空行
