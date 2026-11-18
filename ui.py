@@ -85,7 +85,8 @@ class SND_PT_panel(bpy.types.Panel):
                     area, kind, sound,
                     (" · blend %.2f m" % float(blend)) if blend else ""), icon="DOT")
                 row.label(text="%d" % int(len(group)))
-            shelf.label(text="只读参考：改框不会写回 .snd", icon="INFO")
+            shelf.label(text="拖/缩放外框 = 改该体积；导出时写回", icon="INFO")
+            shelf.label(text="改 snd_blend_depth 属性 = 改 BLEND_DEPTH")
 
 
 CLASSES = (SND_UL_events, SND_PT_panel)

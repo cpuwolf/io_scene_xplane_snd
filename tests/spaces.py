@@ -97,17 +97,10 @@ check(all(o.show_in_front for o in objs), "全部 space 对象 show_in_front（�
 check(all(any(m.type == "WIREFRAME" for m in o.modifiers) for o in objs), "都有 Wireframe 修改器（颜色才看得见）")
 check(all("snd_uid" not in o for o in objs), "space 对象没有 snd_uid（不会被当成 attachment 导出）")
 
-# ---------------------------------------------------------------- 2) 只读：改框不写回
+# ---------------------------------------------------------------- 2) 未改动 ⇒ 逐字节相同
 dst = OUT / "full_spaces_rt.snd"
 bpy.ops.export_scene.xplane_snd(filepath=str(dst))
 check(filecmp.cmp(FIX, dst, shallow=False), "未改动时导出逐字节相同")
-
-box.location = (5.0, 5.0, 5.0)
-box.scale = (2.0, 2.0, 2.0)
-sph1.location = (-3.0, 0.0, 0.0)
-dst2 = OUT / "full_spaces_moved.snd"
-bpy.ops.export_scene.xplane_snd(filepath=str(dst2))
-check(filecmp.cmp(FIX, dst2, shallow=False), "挪动/缩放 space 框后导出仍逐字节相同（只读）")
 
 # ---------------------------------------------------------------- 3) 开关
 r = bpy.ops.snd.toggle_spaces()
@@ -129,10 +122,91 @@ bpy.ops.import_scene.xplane_snd(filepath=str(plain))
 check(len([o for o in bpy.context.scene.objects if "snd_space_index" in o]) == 0,
       "没有 sound space 的文件不受影响")
 
+# ---------------------------------------------------------------- 6) 写回：几何 → AABB / SPHERE
+reset()
+bpy.ops.import_scene.xplane_snd(filepath=str(FIX))
+doc0 = addon.operators.get_doc(bpy.context.scene)
+orig_aabb = tuple(doc0.spaces[0].volumes[0].values)
+orig_sph = tuple(doc0.spaces[0].volumes[1].values)
+objs = [o for o in bpy.context.scene.objects if "snd_space_index" in o]
+box = next(o for o in objs if o.get("snd_space_role") == "boundary" and o.get("snd_space_kind") == "AABB")
+ball = next(o for o in objs if o.get("snd_space_role") == "boundary" and o.get("snd_space_kind") == "SPHERE" and int(o["snd_space_index"]) == 0)
+
+# 1) 只平移 AABB：六个数字里 min/max 同向 +0.5（Blender X = 飞机 X）
+box.location.x += 0.5
+dst = OUT / "spaces_moved_out.snd"
+bpy.ops.export_scene.xplane_snd(filepath=str(dst))
+doc1 = addon.document.read_file(dst)
+got = tuple(doc1.spaces[0].volumes[0].values)
+want_aabb = (orig_aabb[0] + 0.5, orig_aabb[1], orig_aabb[2],
+             orig_aabb[3] + 0.5, orig_aabb[4], orig_aabb[5])
+check(close(got, want_aabb, 1e-3), "平移外框 → AABB 写回 %r" % (got,))
+check(tuple(doc1.spaces[0].volumes[1].values) == orig_sph, "没动的球体积保持原值")
+lines_src = FIX.read_text().splitlines()
+lines_out = dst.read_text().splitlines()
+diff = [i for i, (a, b) in enumerate(zip(lines_src, lines_out)) if a != b]
+check(len(lines_src) == len(lines_out) and len(diff) == 1, "只改了 1 行（实际 %d 行）" % len(diff))
+check(lines_out[diff[0]].lstrip().startswith("AABB") and lines_out[diff[0]].startswith("\t"),
+      "改的是 AABB 行且保留 tab 缩进: %r" % lines_out[diff[0]])
+
+# 2) 球：移动 + 放大 → 球心与半径
+ball.location.y += 1.0
+ball.scale = (1.5, 1.5, 1.5)
+dst = OUT / "spaces_ball_out.snd"
+bpy.ops.export_scene.xplane_snd(filepath=str(dst))
+doc2 = addon.document.read_file(dst)
+got_ball = tuple(doc2.spaces[0].volumes[1].values)
+want_ball = (orig_sph[0], orig_sph[1], orig_sph[2] - 1.0, orig_sph[3] * 1.5)  # Blender +Y = 飞机 -Z
+check(close(got_ball, want_ball, 2e-3), "球心/半径写回 %r（期望 %r）" % (got_ball, want_ball))
+
+# 3) BLEND_DEPTH：改自定义属性
+box = next(o for o in bpy.context.scene.objects if o.get("snd_space_role") == "boundary" and o.get("snd_space_kind") == "AABB")
+box["snd_blend_depth"] = 0.25
+dst = OUT / "spaces_blend_out.snd"
+bpy.ops.export_scene.xplane_snd(filepath=str(dst))
+doc3 = addon.document.read_file(dst)
+check(abs(float(doc3.spaces[0].blend_depth) - 0.25) < 1e-6,
+      "BLEND_DEPTH 写回 0.25（实际 %r）" % doc3.spaces[0].blend_depth)
+
+# 4) 原本没有 BLEND_DEPTH 的 space：插一行，且不能挪坏其它行
+reset()
+bpy.ops.import_scene.xplane_snd(filepath=str(FIX))
+s1 = next(o for o in bpy.context.scene.objects
+          if "snd_space_index" in o and int(o["snd_space_index"]) == 1
+          and o.get("snd_space_role") == "boundary")
+s1["snd_blend_depth"] = 0.2
+spk = next(o for o in bpy.context.scene.objects if o.get("snd_event") == "/fixture/engine/turbine")
+spk.location.x += 1.0
+dst = OUT / "spaces_blend_insert.snd"
+bpy.ops.export_scene.xplane_snd(filepath=str(dst))
+doc4 = addon.document.read_file(dst)
+text4 = dst.read_text()
+check(abs(float(doc4.spaces[1].blend_depth) - 0.2) < 1e-6, "space1 插入 BLEND_DEPTH 0.2")
+check(text4.count("BLEND_DEPTH") == 2, "文件里 BLEND_DEPTH 共 2 处（原本 1 处 + 新插 1 处），实际 %d"
+      % text4.count("BLEND_DEPTH"))
+att = next(a for a in doc4.attachments if a.name == "/fixture/engine/turbine")
+check(close(att.xyz, (1.0, 1.264, -0.559), 1e-3), "同一次导出里 Speaker 的 VEH_XYZ 也写对了：%r" % (att.xyz,))
+check(len(text4.splitlines()) == len(FIX.read_text().splitlines()) + 1,
+      "只多出插入的那一行")
+
+# 5) Shift+D 副本：不重复写回，给警告
+reset()
+bpy.ops.import_scene.xplane_snd(filepath=str(FIX))
+box = next(o for o in bpy.context.scene.objects if o.get("snd_space_role") == "boundary" and o.get("snd_space_kind") == "AABB")
+dup = box.copy()
+dup.name = box.name + "_dup"
+bpy.context.scene.collection.objects.link(dup)
+dup.location.x += 3.0
+dst = OUT / "spaces_dup_out.snd"
+bpy.ops.export_scene.xplane_snd(filepath=str(dst))
+doc5 = addon.document.read_file(dst)
+check(tuple(doc5.spaces[0].volumes[0].values) == orig_aabb,
+      "副本不参与写回（原对象没动 ⇒ AABB 原样）：%r" % (tuple(doc5.spaces[0].volumes[0].values),))
+
 print()
 if fails:
     print("SPACES FAIL %d 项" % len(fails))
     for f in fails:
         print("  - " + f)
     sys.exit(1)
-print("SPACES OK（几何 / 只读 / 开关 / 可选 全通过）")
+print("SPACES OK（几何 / 写回 / 只读边界 / 开关 / 可选 全通过）")

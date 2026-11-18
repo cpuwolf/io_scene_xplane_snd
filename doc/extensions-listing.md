@@ -29,7 +29,8 @@ the sound layout of an aircraft instead of editing coordinates by hand.
   muted; "Solo selected" and "Mute all" make it practical to audition one cue at a time.
 - Sound spaces (`AABB` / `SPHERE`) are drawn as wire volumes: the zone boundary plus an
   inner shell at `BLEND_DEPTH`, so you can see where the "inside the aircraft" mix fades
-  out. They are reference geometry — moving them does not change the file.
+  out. Move or scale the boundary and it is written back as the new `AABB` / sphere;
+  `BLEND_DEPTH` is editable through the object's custom properties.
 - Move or duplicate Speakers in the viewport, rename whole events, then export.
 - Export patches the original file: lines you did not touch are written back byte for byte
   (same tabs, comments, line order and line endings). Files from other tools survive the

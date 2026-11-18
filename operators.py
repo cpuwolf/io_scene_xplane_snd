@@ -438,6 +438,11 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
             owners[str(uid)] = obj.name
             added += 1
 
+        # sound space：把框的改动写回 AABB / SPHERE / BLEND_DEPTH 行（没动过就一行都不改）
+        space_vols, space_blends, space_warns = spaces.sync(doc, scene, origin, axis)
+        for w in space_warns:
+            self.report({"WARNING"}, w)
+
         try:
             write_file(self.filepath, doc)
         except OSError as exc:
@@ -454,9 +459,11 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
 
         self.report(
             {"INFO"},
-            "已写出 %s：改了 %d 个 attachment%s%s"
+            "已写出 %s：改了 %d 个 attachment%s%s%s%s"
             % (os.path.basename(self.filepath), patched,
                ("，新增 %d 个" % added) if added else "",
+               ("，space 体积 %d 个" % space_vols) if space_vols else "",
+               ("，BLEND_DEPTH %d 处" % space_blends) if space_blends else "",
                (" · " + "; ".join("%s:%s" % (n, "/".join(f)) for n, f in changed_fields[:4])) if changed_fields else ""),
         )
         return {"FINISHED"}

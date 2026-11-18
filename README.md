@@ -76,11 +76,30 @@ RAW 差 3.7 米正好说明轴向映射既必要也正确 —— 不是"差一�
 ![737-800 的两个分区：Cockpit 与 Passenger cabin，各自带过渡内框](doc/img/spaces_zones.jpg)
 
 - 分区对象带 `snd_space_index` / `snd_space_kind` / `snd_space_role` / `snd_blend_depth` 等
-  custom properties，但**没有 `snd_uid`** —— 导出只认带 `snd_uid` 的对象，所以框永远不会被
-  当成 attachment 写回，挪动或缩放它们不影响往返结果（`tests/spaces.py` 直接断言这一条）。
+  custom properties，但**没有 `snd_uid`** —— 导出时它们走 sound space 的写回逻辑，不会被当成
+  attachment。
 - 面板里列出每个分区：区域名（取自 `.snd` 里块上方的注释）、AABB/SPHERE、`inside_ratio[n]`、
   `blend` 距离，并有一个显示/隐藏开关。
 - 导入选项 `Sound spaces` 关掉就不建这些对象。
+
+### 改分区（写回规则）
+
+| 你动的东西 | 写回成什么 |
+|---|---|
+| 拖 / 转 / 缩放 **外框** | 该体积的 `AABB` 六个数：取**变换完成后**世界坐标的轴对齐包围盒 |
+| 拖 / 缩放 **球** | `SPHERE` 的球心与半径（半径 = 世界包围盒最长边的一半） |
+| 改对象的 `snd_blend_depth` 属性 | `BLEND_DEPTH` 那一行；原本没有就插在 `SOUND_INDEX` 之后 |
+| 动 **`_core` 内框** | 什么都不写 —— 它是 `BLEND_DEPTH` 的派生物 |
+
+几条刻意的边界：
+
+- **只认原对象**：导入时把对象名记进 `snd_owner_name`；`Shift+D` 出来的副本名字变成 `_001`，
+  导出时跳过并给警告（分区不支持新增体积，静默吞改动比拒绝更糟）。
+- **差值 < 0.5 mm 视为没动**，所以没编辑过的文件导出仍然逐字节相同。
+- 旋转/非均匀缩放 AABB 后写回的是**轴对齐外包盒**——`.snd` 里只能存 AABB，这不是"尽量贴近"，
+  是唯一正确的行为；球被非均匀缩放会警告，因为那已经不是球。
+- 写回是按行 patch：一次平移只改那 1 行，tab 缩进和其余 2992 行原样保留（C90B 实测
+  2993 行 → 2993 行，diff 恰好 1 行）。
 
 ## 导出：保留原文，只 patch 改动行
 
@@ -199,7 +218,7 @@ blender -b                  -P tests/align_mesh.py -- --raw        # 负向对�
 
 - 只做 `.snd`：不读 bank、不碰 FMOD、不做音频编码
 - 不做 `.snd` 里的触发条件编辑（条件原文保留在 custom prop 里，回写不动它）
-- Sound space（`AABB`/`SPHERE`）只画出来看，**不写回**：几何是只读参考，改框不会改 `.snd`
+- Sound space（`AABB`/`SPHERE`）可编辑并写回；`_core` 内框是派生物、不支持新增分区/体积
 - 几何叠加是可选的：用 `io_scene_xplane_obj` 自己导 OBJ8 进来即可，本插件不调用它
 
 GPL-3.0-or-later

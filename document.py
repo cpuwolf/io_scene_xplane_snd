@@ -68,16 +68,37 @@ class Attachment:
 
 
 @dataclass
+class SpaceVolume:
+    """sound space 里的一个体积（AABB 或 SPHERE），带行号以便原地 patch。"""
+    kind: str                                     # "AABB" | "SPHERE"
+    line_no: int
+    values: tuple                                 # AABB: 6 个数 / SPHERE: (x, y, z, r)，米，相对 CG
+    indent: str = "\t"
+
+    def text(self) -> str:
+        return "%s%s %s" % (self.indent, self.kind,
+                            " ".join("%.3f" % float(v) for v in self.values))
+
+
+@dataclass
 class SoundSpace:
     index: int
     begin_line: int
     end_line: int = -1
     remark: Optional[str] = None                   # 紧邻上方的注释（通常是区域名：Cockpit / Passenger cabin）
     sound_index: Optional[int] = None               # → sim/operation/sound/inside_ratio[n]
+    sound_line: Optional[int] = None                # SOUND_INDEX 所在行（插入 BLEND_DEPTH 时的锚点）
     blend_depth: Optional[float] = None             # 从边界向内 m 米的软过渡
-    volumes: list = field(default_factory=list)     # 原始文本：[('AABB', '...'), ('SPHERE', '...')]，只读保真
-    aabbs: list = field(default_factory=list)       # [(minx, miny, minz, maxx, maxy, maxz), ...] 米，相对 CG
-    spheres: list = field(default_factory=list)     # [(x, y, z, r), ...] 米，相对 CG
+    blend_line: Optional[int] = None                # BLEND_DEPTH 所在行（没有则为 None）
+    volumes: list = field(default_factory=list)     # [SpaceVolume, ...]，同一 space 内多个体积取并集
+
+    @property
+    def aabbs(self):
+        return [v.values for v in self.volumes if v.kind == "AABB"]
+
+    @property
+    def spheres(self):
+        return [v.values for v in self.volumes if v.kind == "SPHERE"]
 
 
 class Document:
@@ -158,19 +179,20 @@ class Document:
             elif cur_spa is not None:
                 if key == "SOUND_INDEX":
                     cur_spa.sound_index = _int(rest)
+                    cur_spa.sound_line = i
                 elif key == "BLEND_DEPTH":
                     cur_spa.blend_depth = _float(rest)
+                    cur_spa.blend_line = i
                 elif key in ("AABB", "SPHERE"):
-                    cur_spa.volumes.append((key, rest))
-                    vals = _floats(rest, 6 if key == "AABB" else 4)
+                    want = 6 if key == "AABB" else 4
+                    vals = _floats(rest, want)
                     if vals is None:
                         self.warnings.append(
                             "第 %d 行 %s 数值不足（要 %d 个），已忽略这个体积: %r"
-                            % (i + 1, key, 6 if key == "AABB" else 4, rest[:40]))
-                    elif key == "AABB":
-                        cur_spa.aabbs.append(tuple(vals))
+                            % (i + 1, key, want, rest[:40]))
                     else:
-                        cur_spa.spheres.append(tuple(vals))
+                        cur_spa.volumes.append(SpaceVolume(kind=key, line_no=i,
+                                                           values=tuple(vals), indent=indent))
             else:
                 self.general.append((key, rest, i))
             i += 1
@@ -271,6 +293,44 @@ class Document:
                     changed.append(key)
         return changed
 
+    def _indent_of(self, line_no: int) -> str:
+        m = RE_KV.match(self.lines[line_no])
+        return m.group("indent") if m else "\t"
+
+    def patch_space_volume(self, space, volume_index: int, values) -> bool:
+        """把一个 AABB/SPHERE 的数值改掉（只重写那一行，保留缩进）。返回是否真的改了。"""
+        if not (0 <= volume_index < len(space.volumes)):
+            return False
+        vol = space.volumes[volume_index]
+        new = tuple(round(float(v), 3) for v in values)
+        if len(new) != len(vol.values):
+            return False
+        if tuple(round(float(v), 3) for v in vol.values) == new:
+            return False
+        self.set_line(vol.line_no, "%s%s %s" % (vol.indent, vol.kind,
+                                                " ".join("%.3f" % v for v in new)))
+        vol.values = new
+        return True
+
+    def patch_space_blend(self, space, value) -> bool:
+        """改 BLEND_DEPTH；原本没有这一行就插在 SOUND_INDEX 之后。"""
+        new = round(float(value), 3)
+        if new < 0:
+            return False
+        if space.blend_depth is not None and abs(float(space.blend_depth) - new) < 5e-4:
+            return False
+        if space.blend_line is not None:
+            self.set_line(space.blend_line,
+                          "%sBLEND_DEPTH %.3f" % (self._indent_of(space.blend_line), new))
+        else:
+            anchor = space.sound_line if space.sound_line is not None else space.begin_line
+            ins = anchor + 1
+            self.lines.insert(ins, "%sBLEND_DEPTH %.3f%s" % (self._indent_of(anchor), new, self.eol))
+            self._shift_after(ins, +1)
+            space.blend_line = ins
+        space.blend_depth = new
+        return True
+
     def _shift_after(self, line_no: int, delta: int, skip: Attachment = None):
         """插入/删除行后，修正后面所有对象的行号索引。"""
         for a in self.attachments:
@@ -288,6 +348,13 @@ class Document:
                 s.begin_line += delta
             if s.end_line >= line_no:
                 s.end_line += delta
+            for attr in ("sound_line", "blend_line"):
+                cur = getattr(s, attr)
+                if cur is not None and cur >= line_no:
+                    setattr(s, attr, cur + delta)
+            for v in s.volumes:
+                if v.line_no >= line_no:
+                    v.line_no += delta
         self.general = [(k, r, (ln + delta if ln >= line_no else ln)) for k, r, ln in self.general]
 
     def append_attachment(self, *, kind, name, xyz, indent="\t", remark=None,
