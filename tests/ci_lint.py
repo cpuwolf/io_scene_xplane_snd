@@ -62,9 +62,14 @@ for f in sorted(ROOT.rglob("*")):
     if f.is_file() and f.suffix in banned_ext:
         errors.append("仓库里不该有: %s" % f.relative_to(ROOT))
 
-# 5) 每个提交的文件都能 UTF-8 解码
+# 5) 每个提交的文本文件都能 UTF-8 解码（二进制资产按后缀跳过）
+# 上架用的图标 PNG 是二进制，不是"编码坏了" —— 早先这条会把 branding/*.png 判成错误。
+BINARY_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svgz",
+                 ".zip", ".blend", ".blend1", ".pyc", ".bank", ".wav", ".ogg"}
 for f in sorted(ROOT.rglob("*")):
     if not f.is_file() or any(part in SKIP_DIRS for part in f.parts):
+        continue
+    if f.suffix.lower() in BINARY_SUFFIX:
         continue
     try:
         f.read_text(encoding="utf-8")
