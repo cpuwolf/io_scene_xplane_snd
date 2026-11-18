@@ -12,7 +12,7 @@ from bpy.props import (BoolProperty, CollectionProperty, EnumProperty,
 from bpy.types import OperatorFileListElement
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 
-from . import acftool
+from . import acftool, spaces
 from .document import Document, read_file, write_file
 
 # 会话内的文档缓存：scene.name -> Document
@@ -214,6 +214,11 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
         description="关闭则用 Empty（Speaker 可以试听、能显示锥体朝向）",
         default=True,
     )
+    make_spaces: BoolProperty(
+        name="Sound spaces",
+        description="把 AABB / SPHERE 听感分区画成线框（边界 + BLEND_DEPTH 过渡内框），只读参考",
+        default=True,
+    )
     axis_mode: EnumProperty(
         name="轴向",
         description="Blender 坐标怎么摆。XP2B 与 io_scene_xplane_obj 导入的网格对齐",
@@ -311,6 +316,10 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
         scene[PROP_OWNERS] = json.dumps(owners)
         refresh_events(scene)
 
+        space_count = 0
+        if self.make_spaces and doc.spaces:
+            _, space_count = spaces.build(scene, doc, origin, axis, coll)
+
         for w in doc.warnings:
             self.report({"WARNING"}, w)
         if warn:
@@ -318,8 +327,8 @@ class IMPORT_OT_xplane_snd(bpy.types.Operator, ImportHelper):
 
         self.report(
             {"INFO"},
-            "导入 %d 个 attachment（%d 个 space）· 原点 %s = (%.3f, %.3f, %.3f) · 轴向 %s"
-            % (made, len(doc.spaces), origin_src, origin[0], origin[1], origin[2], axis),
+            "导入 %d 个 attachment（%d 个 space 分区，%d 个空间）· 原点 %s = (%.3f, %.3f, %.3f) · 轴向 %s"
+            % (made, len(doc.spaces), space_count, origin_src, origin[0], origin[1], origin[2], axis),
         )
         return {"FINISHED"}
 
@@ -485,9 +494,27 @@ class SND_OT_mute_all(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SND_OT_toggle_spaces(bpy.types.Operator):
+    """显示 / 隐藏 sound space 线框（座舱里一堆框挡视线时用）"""
+    bl_idname = "snd.toggle_spaces"
+    bl_label = "显示/隐藏 space 线框"
+
+    def execute(self, context):
+        colls = [c for c in bpy.data.collections if c.name.endswith(" / Sound spaces")]
+        if not colls:
+            self.report({"WARNING"}, "这个场景里没有 sound space")
+            return {"CANCELLED"}
+        hide = not all(c.hide_viewport for c in colls)
+        for c in colls:
+            c.hide_viewport = hide
+        self.report({"INFO"}, "space 线框：%s" % ("隐藏" if hide else "显示"))
+        return {"FINISHED"}
+
+
 CLASSES = (
     SND_EventItem,
     SND_OT_refresh_events,
     SND_OT_select_event,
     SND_OT_isolate_event,
-    SND_OT_rename_event,IMPORT_OT_xplane_snd, EXPORT_OT_xplane_snd, SND_OT_solo, SND_OT_mute_all)
+    SND_OT_rename_event,IMPORT_OT_xplane_snd, EXPORT_OT_xplane_snd, SND_OT_solo, SND_OT_mute_all,
+    SND_OT_toggle_spaces)

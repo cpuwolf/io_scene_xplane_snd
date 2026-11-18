@@ -72,9 +72,12 @@ class SoundSpace:
     index: int
     begin_line: int
     end_line: int = -1
-    sound_index: Optional[int] = None
-    blend_depth: Optional[float] = None
-    volumes: list = field(default_factory=list)    # [('AABB', 'x1 y1 z1 x2 y2 z2'), ('SPHERE', ...)]
+    remark: Optional[str] = None                   # 紧邻上方的注释（通常是区域名：Cockpit / Passenger cabin）
+    sound_index: Optional[int] = None               # → sim/operation/sound/inside_ratio[n]
+    blend_depth: Optional[float] = None             # 从边界向内 m 米的软过渡
+    volumes: list = field(default_factory=list)     # 原始文本：[('AABB', '...'), ('SPHERE', '...')]，只读保真
+    aabbs: list = field(default_factory=list)       # [(minx, miny, minz, maxx, maxy, maxz), ...] 米，相对 CG
+    spheres: list = field(default_factory=list)     # [(x, y, z, r), ...] 米，相对 CG
 
 
 class Document:
@@ -141,7 +144,8 @@ class Document:
                     cur_att = None
                 last_comment = None
             elif key == "BEGIN_SOUND_SPACE":
-                cur_spa = SoundSpace(index=len(self.spaces), begin_line=i)
+                cur_spa = SoundSpace(index=len(self.spaces), begin_line=i,
+                                     remark=_clean_remark(last_comment))
                 self.spaces.append(cur_spa)
                 last_comment = None
             elif key == "END_SOUND_SPACE":
@@ -158,6 +162,15 @@ class Document:
                     cur_spa.blend_depth = _float(rest)
                 elif key in ("AABB", "SPHERE"):
                     cur_spa.volumes.append((key, rest))
+                    vals = _floats(rest, 6 if key == "AABB" else 4)
+                    if vals is None:
+                        self.warnings.append(
+                            "第 %d 行 %s 数值不足（要 %d 个），已忽略这个体积: %r"
+                            % (i + 1, key, 6 if key == "AABB" else 4, rest[:40]))
+                    elif key == "AABB":
+                        cur_spa.aabbs.append(tuple(vals))
+                    else:
+                        cur_spa.spheres.append(tuple(vals))
             else:
                 self.general.append((key, rest, i))
             i += 1
@@ -345,6 +358,15 @@ def _floats(s, count):
         return v if len(v) == count else None
     except Exception:
         return None
+
+
+def _clean_remark(text):
+    """注释横幅（`# -------------------- Cockpit ----------`）→ 只留区域名。"""
+    if not text:
+        return None
+    s = str(text).strip().strip("#").strip()
+    s = re.sub(r"^[-=\s]+|[-=\s]+$", "", s)
+    return s or None
 
 
 def read_file(path) -> Document:

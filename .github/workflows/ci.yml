@@ -119,6 +119,9 @@ jobs:
       - name: events (EVENT_NAME 与 attachment 的 1:N)
         run: "blender -b --factory-startup -P tests/events.py"
 
+      - name: spaces (sound space 线框：几何 / 只读 / 开关)
+        run: "\"$HOME/blender/blender\" -b --factory-startup -P tests/spaces.py"
+
       - name: upload extension zip
         uses: actions/upload-artifact@v4
         with:

@@ -56,6 +56,32 @@ RAW  : min 2.121   p50 3.745  p90 3.940   <=0.2m  0%     FAIL（负向对照，�
 
 RAW 差 3.7 米正好说明轴向映射既必要也正确 —— 不是"差一点点"，是差一个坐标轴。
 
+## 听感分区（sound space）
+
+`.snd` 里的 `BEGIN_SOUND_SPACE` 决定 `sim/operation/sound/inside_ratio[n]` 这个 0..1 的听感系数：
+点在体积内 = 1（车内声），体积外 = 0（车外声），从边界向内 `BLEND_DEPTH` 米是线性过渡。
+导入时每个体积画成两层线框：
+
+| | 是什么 | 颜色 |
+|---|---|---|
+| 外框（boundary） | `AABB` 的 6 个数 / `SPHERE` 的球面 —— 数学边界 | 琥珀（AABB）/ 青（SPHERE） |
+| 内框（core） | 边界向内缩 `BLEND_DEPTH` 米 —— 满音量的核心区 | 同色压暗 |
+
+两层之间那条带子就是软过渡区。画法上刻意选了「实体面 + Wireframe 修改器」而不是
+`display_type='WIRE'`：纯线框对象在 Solid 模式下用主题线色（灰），贴在座舱网格里基本看不见；
+另外 `show_in_front = True`，所以透过机身也能看到框。
+
+![C90B 的听感分区：404 个发声点在框内（白），9 个在框外（深灰）](doc/img/spaces_inside.jpg)
+
+![737-800 的两个分区：Cockpit 与 Passenger cabin，各自带过渡内框](doc/img/spaces_zones.jpg)
+
+- 分区对象带 `snd_space_index` / `snd_space_kind` / `snd_space_role` / `snd_blend_depth` 等
+  custom properties，但**没有 `snd_uid`** —— 导出只认带 `snd_uid` 的对象，所以框永远不会被
+  当成 attachment 写回，挪动或缩放它们不影响往返结果（`tests/spaces.py` 直接断言这一条）。
+- 面板里列出每个分区：区域名（取自 `.snd` 里块上方的注释）、AABB/SPHERE、`inside_ratio[n]`、
+  `blend` 距离，并有一个显示/隐藏开关。
+- 导入选项 `Sound spaces` 关掉就不建这些对象。
+
 ## 导出：保留原文，只 patch 改动行
 
 `.snd` 里有大量注释和空行（C90B：2993 行里 288 行注释 + 272 行空行），全量重写会把它们
@@ -173,7 +199,7 @@ blender -b                  -P tests/align_mesh.py -- --raw        # 负向对�
 
 - 只做 `.snd`：不读 bank、不碰 FMOD、不做音频编码
 - 不做 `.snd` 里的触发条件编辑（条件原文保留在 custom prop 里，回写不动它）
-- Sound space（`AABB`/`SPHERE`）目前只解析、不建物体（下一步）
+- Sound space（`AABB`/`SPHERE`）只画出来看，**不写回**：几何是只读参考，改框不会改 `.snd`
 - 几何叠加是可选的：用 `io_scene_xplane_obj` 自己导 OBJ8 进来即可，本插件不调用它
 
 GPL-3.0-or-later

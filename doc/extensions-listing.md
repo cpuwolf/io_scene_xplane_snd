@@ -27,6 +27,9 @@ the sound layout of an aircraft instead of editing coordinates by hand.
   attachment, grouped by event in the Outliner.
 - Speakers show the attachment's orientation (cone direction), and the sound data can be
   muted; "Solo selected" and "Mute all" make it practical to audition one cue at a time.
+- Sound spaces (`AABB` / `SPHERE`) are drawn as wire volumes: the zone boundary plus an
+  inner shell at `BLEND_DEPTH`, so you can see where the "inside the aircraft" mix fades
+  out. They are reference geometry — moving them does not change the file.
 - Move or duplicate Speakers in the viewport, rename whole events, then export.
 - Export patches the original file: lines you did not touch are written back byte for byte
   (same tabs, comments, line order and line endings). Files from other tools survive the
