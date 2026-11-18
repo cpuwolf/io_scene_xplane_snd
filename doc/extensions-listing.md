@@ -30,7 +30,9 @@ the sound layout of an aircraft instead of editing coordinates by hand.
 - Sound spaces (`AABB` / `SPHERE`) are drawn as wire volumes: the zone boundary plus an
   inner shell at `BLEND_DEPTH`, so you can see where the "inside the aircraft" mix fades
   out. Move or scale the boundary and it is written back as the new `AABB` / sphere;
-  `BLEND_DEPTH` is editable through the object's custom properties.
+  `BLEND_DEPTH` is editable through the object's custom properties. New zones and extra
+  volumes can be authored from the sidebar (placed at the 3D cursor) and are inserted into
+  the file as proper `BEGIN_SOUND_SPACE` blocks on export.
 - Move or duplicate Speakers in the viewport, rename whole events, then export.
 - Export patches the original file: lines you did not touch are written back byte for byte
   (same tabs, comments, line order and line endings). Files from other tools survive the
@@ -57,6 +59,8 @@ the sound layout of an aircraft instead of editing coordinates by hand.
 - Trigger conditions are preserved and can be copied to new attachments, but there is no
   condition editor.
 - Sound spaces (`AABB` / `SPHERE`) are parsed and kept, but not drawn as geometry yet.
+
+Video walkthrough: https://youtu.be/Y4RgjIb13Jc
 
 Source and issue tracker: https://github.com/cpuwolf/io_scene_xplane_snd
 ```

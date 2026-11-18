@@ -3,6 +3,9 @@
 Blender 里编辑 X-Plane 的 `.snd` 文件：每个 sound attachment 变成场景里的一个 **Speaker**，
 在三维里看位置、拖动摆位，再写回 `.snd`。
 
+**视频演示**：[X-Plane 12 FMOD sound space FIX](https://youtu.be/Y4RgjIb13Jc) —— 用这个插件
+把 King Air C90 的听感分区在 Blender 里看见并挪回原位。
+
 **零依赖**：不需要 XPlane2Blender，也不需要 `io_scene_xplane_obj`，只用 Blender 自带 API +
 Python 标准库。因此 `blender -b` 下可以完整跑回归测试。
 
@@ -58,6 +61,18 @@ RAW 差 3.7 米正好说明轴向映射既必要也正确 —— 不是"差一�
 
 ## 听感分区（sound space）
 
+**格式层面支持多分区、且一个分区可以有多个体积**（官方 `.snd` 规范，Sound Space Definitions 一节）：
+
+- 最多 **64 个** sound space；索引 `SOUND_INDEX 0–63`，每个索引对应一条 `sim/operation/sound/inside_ratio[n]`。
+- 一个 space 是「一个或多个体积的**并集**」：`AABB`（min/max 六个数）和 `SPHERE`（球心+半径）可以混用，
+  **允许互不相交、也允许重叠**；`BLEND_DEPTH` 按并集边界的向内距离算（边界处 ratio=0，向内 m 米处 → 1.0）。
+- 所有坐标都是米、飞机坐标（+X 右 / +Y 上 / +Z 后），相对默认 CG（或 `REF_POINT_ACF`）。
+- space 不能嵌在 attachment 里，一个 space 必须 `END_SOUND_SPACE` 收尾后才能开下一个。
+
+本机 X-Plane 12 实测（22 个官方 `.snd`）：**4 个文件有 2 个分区**（A330 / A330_AI / b738 / MD80，
+索引都是 0 和 1）；**没有一个官方文件在同一个 space 里放多个体积**（格式允许，只是 Laminar 没用）。
+本插件的 fixture 里两种情形都有，`tests/spaces.py` 都覆盖。
+
 `.snd` 里的 `BEGIN_SOUND_SPACE` 决定 `sim/operation/sound/inside_ratio[n]` 这个 0..1 的听感系数：
 点在体积内 = 1（车内声），体积外 = 0（车外声），从边界向内 `BLEND_DEPTH` 米是线性过渡。
 导入时每个体积画成两层线框：
@@ -100,6 +115,19 @@ RAW 差 3.7 米正好说明轴向映射既必要也正确 —— 不是"差一�
   是唯一正确的行为；球被非均匀缩放会警告，因为那已经不是球。
 - 写回是按行 patch：一次平移只改那 1 行，tab 缩进和其余 2992 行原样保留（C90B 实测
   2993 行 → 2993 行，diff 恰好 1 行）。
+
+### 新建分区 / 新体积
+
+1. 把 3D 光标（`Shift + 右键`）放到想要的位置；
+2. 侧栏 `X-Plane SND` 面板里点 `+`（听感分区那一行的标题右侧）= 新建一个分区；
+   点某个分区行末尾的 `+` = 往**那个分区**里加一个体积（并集）；
+3. `F9` 可以改：形状（AABB / 球）、边长或半径、`SOUND_INDEX`（留 -1 自动取下一个空闲索引）、
+   `BLEND_DEPTH`；
+4. 导出时：新分区追加成一个 `BEGIN_SOUND_SPACE … END_SOUND_SPACE` 块（插在最后一个分区之后、
+   attachment 之前，和 Laminar 的排版一致）；新体积则插进目标分区的 `END_SOUND_SPACE` 之前。
+
+实测（C90B，2993 行 → 2999 行）：只有 6 行是插入的，原有 2993 行一个字节没动，436 个 attachment
+解析结果不变。导出后场景里的「原文基线」会更新成刚写出的内容，所以**同一个场景连续导出两次不会重复追加**。
 
 ## 导出：保留原文，只 patch 改动行
 

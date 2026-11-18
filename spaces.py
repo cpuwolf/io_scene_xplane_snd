@@ -202,6 +202,161 @@ def build(scene, doc, origin, axis, parent_coll):
     return coll, made
 
 
+def _values_from_object(obj, kind, origin, axis):
+    """从对象当前变换算出它应该写回文件的那组数（AABB 六个 / SPHERE 四个）。"""
+    lo, hi = _world_bounds(obj)
+    if kind == KIND_AABB:
+        a = _to_aircraft(lo, origin, axis)
+        b = _to_aircraft(hi, origin, axis)
+        return tuple(min(a[i], b[i]) for i in range(3)) + \
+               tuple(max(a[i], b[i]) for i in range(3))
+    sizes = [hi[i] - lo[i] for i in range(3)]
+    center = tuple((lo[i] + hi[i]) / 2.0 for i in range(3))
+    return _to_aircraft(center, origin, axis) + (max(sizes) / 2.0,)
+
+
+# ---------------------------------------------------------------- 新建
+def new_object(scene, coll, origin, axis, kind, sound_index, blend, size=1.0,
+               radius=1.0, target_space=None):
+    """在 3D 光标处新建一个分区体积对象。
+
+    target_space=None → 新分区（导出时追加一个 BEGIN_SOUND_SPACE 块）
+    target_space=<n>  → 加到第 n 个已有分区，作为它的新体积（规范里是并集）
+    """
+    cursor = tuple(scene.cursor.location)
+    center = _to_aircraft(cursor, origin, axis)
+    if kind == KIND_SPHERE:
+        values = center + (float(radius),)
+        label = "SPACE_new_%s" % Kind_label(kind)
+        obj = _sphere_obj(label, values, origin, axis, coll, KIND_SPHERE, ROLE_BOUNDARY,
+                          _material(KIND_SPHERE, ROLE_BOUNDARY), _tube(2.0 * float(radius)))
+    else:
+        half = float(size) / 2.0
+        values = (center[0] - half, center[1] - half, center[2] - half * 0.75,
+                  center[0] + half, center[1] + half, center[2] + half * 0.75)
+        label = "SPACE_new_AABB"
+        obj = _box_obj(label, values, origin, axis, coll, KIND_AABB, ROLE_BOUNDARY,
+                       _material(KIND_AABB, ROLE_BOUNDARY),
+                       _tube(max(values[3] - values[0], values[4] - values[1], values[5] - values[2])))
+    obj["snd_space_kind"] = kind
+    obj["snd_space_role"] = ROLE_BOUNDARY
+    obj["snd_space_index"] = int(sound_index)
+    obj["snd_sound_index"] = int(sound_index)
+    obj["snd_blend_depth"] = float(blend)
+    obj["snd_owner_name"] = obj.name
+    if target_space is None:
+        obj["snd_space_new"] = True
+    else:
+        obj["snd_space_new_volume"] = int(target_space)
+        obj["snd_space_index"] = int(target_space)
+    # 过渡内框：按当前 blend 画一个，纯视觉参考
+    if float(blend) > 0:
+        core = _inset(values, float(blend)) if kind == KIND_AABB else \
+            ((values[0], values[1], values[2], values[3] - float(blend))
+             if values[3] > float(blend) else None)
+        if core is not None:
+            cobj = _box_obj(label + "_core", core, origin, axis, coll, kind, ROLE_CORE,
+                            _material(kind, ROLE_CORE), _tube(2.0))
+            _tag(cobj, _FakeSpace(int(sound_index)), kind, ROLE_CORE, 0)
+    return obj
+
+
+class _FakeSpace:
+    """给 _tag 用的最小占位（新建的对象还没有对应的 space 索引）。"""
+
+    def __init__(self, index):
+        self.index = index
+        self.sound_index = index
+        self.blend_depth = None
+        self.begin_line = 0
+        self.remark = None
+
+
+def Kind_label(kind):
+    return "sphere" if kind == KIND_SPHERE else "box"
+
+
+def add_new(doc, scene, origin, axis):
+    """把 Blender 里新建的分区/体积写进文档。返回 (新分区数, 新体积数, 警告)。
+
+    顺序很重要：先往已有分区插体积（不改变 space 数量），再追加新分区块
+    （新块插在最后，已有分区的 index 不会被打乱）。
+    """
+    new_spaces = {}     # 临时 index -> dict(sound, blend, vols=[(kind, vals)], objs=[...])
+    new_volumes = {}    # 目标 space index -> [(kind, vals, obj)]
+    warns = []
+
+    for obj in scene.objects:
+        if "snd_space_index" not in obj or obj.get("snd_space_role") != ROLE_BOUNDARY:
+            continue
+        owner = obj.get("snd_owner_name")
+        if owner and obj.name != owner:
+            continue                                   # 副本不参与
+        kind = obj.get("snd_space_kind")
+        if kind not in (KIND_AABB, KIND_SPHERE):
+            continue
+        target = obj.get("snd_space_new_volume")
+        is_new = bool(obj.get("snd_space_new"))
+        if target is None and not is_new:
+            continue                                   # 已有体积，走 sync()
+        values = _values_from_object(obj, kind, origin, axis)
+
+        if is_new:
+            key = int(obj.get("snd_space_index", 0))
+            slot = new_spaces.setdefault(key, {
+                "sound": int(obj.get("snd_sound_index", 0)),
+                "blend": obj.get("snd_blend_depth"),
+                "vols": [], "objs": [], "area": obj.get("snd_space_area"),
+            })
+            slot["vols"].append((kind, values))
+            slot["objs"].append(obj)
+        else:
+            tgt = int(target)
+            if not (0 <= tgt < len(doc.spaces)):
+                warns.append("%s 要加到的分区 %d 不存在，跳过" % (obj.name, tgt))
+                continue
+            new_volumes.setdefault(tgt, []).append((kind, values, obj))
+
+    made_volumes = 0
+    for idx in sorted(new_volumes):
+        for kind, values, obj in new_volumes[idx]:
+            space = doc.spaces[idx]
+            doc.insert_volume(space, kind, values)
+            space = doc.spaces[idx]                     # reparse 之后重新取
+            vi = len(space.volumes) - 1
+            obj.pop("snd_space_new_volume", None)
+            obj["snd_space_index"] = idx
+            obj["snd_volume_index"] = vi
+            obj["snd_owner_name"] = obj.name
+            made_volumes += 1
+
+    made_spaces = 0
+    for key in sorted(new_spaces):
+        slot = new_spaces[key]
+        sound = slot["sound"]
+        if not (0 <= sound <= 63):
+            warns.append("SOUND_INDEX %d 超出 0–63，X-Plane 只接受这个范围" % sound)
+            sound = min(63, max(0, sound))
+        used = {s.sound_index for s in doc.spaces}
+        if sound in used:
+            warns.append("SOUND_INDEX %d 已被别的分区占用（同一索引会被当成同一个 inside_ratio）"
+                         % sound)
+        doc.insert_space(sound, slot["blend"], slot["vols"], remark=slot["area"])
+        idx = len(doc.spaces) - 1
+        for obj in slot["objs"]:
+            obj.pop("snd_space_new", None)
+            obj["snd_space_index"] = idx
+            obj["snd_sound_index"] = sound
+            obj["snd_owner_name"] = obj.name
+        # 体积索引按插入顺序回填
+        for vi, (kind, values) in enumerate(slot["vols"]):
+            for obj in slot["objs"]:
+                if obj.get("snd_space_kind") == kind and obj.get("snd_volume_index") is None:
+                    obj["snd_volume_index"] = vi
+        made_spaces += 1
+    return made_spaces, made_volumes, warns
+
+
 # ---------------------------------------------------------------- 写回
 def _world_bounds(obj):
     """对象网格顶点的世界坐标轴对齐包围盒（含用户施加的移动/旋转/缩放）。"""

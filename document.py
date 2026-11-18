@@ -357,6 +357,56 @@ class Document:
                     v.line_no += delta
         self.general = [(k, r, (ln + delta if ln >= line_no else ln)) for k, r, ln in self.general]
 
+    def reparse(self):
+        """按当前 lines 重新解析（插入新的 space/体积块之后调用，让索引重新对齐）。"""
+        self.__init__("".join(self.lines))
+
+    def _space_insert_anchor(self) -> int:
+        """新 space 该插在哪：最后一个 END_SOUND_SPACE 之后（Laminar 的排版也是 space 在前）。"""
+        ends = [s.end_line for s in self.spaces if s.end_line >= 0]
+        if ends:
+            return max(ends) + 1
+        # 没有 space：插在头部三行之后（跳过 BOM/空行）
+        i = 0
+        head = 0
+        while i < len(self.lines) and head < 3:
+            if self.lines[i].strip().lstrip("\ufeff"):
+                head += 1
+            i += 1
+        return i
+
+    def insert_volume(self, space, kind: str, values, indent=None) -> None:
+        """在 END_SOUND_SPACE 之前插一行 AABB/SPHERE（往已有分区里加体积）。"""
+        indent = indent or (space.volumes[0].indent if space.volumes else "\t")
+        at = space.end_line if space.end_line >= 0 else len(self.lines) - 1
+        line = "%s%s %s%s" % (indent, kind, " ".join("%.3f" % float(v) for v in values), self.eol)
+        self.lines.insert(at, line)
+        self._shift_after(at, +1)
+        self.reparse()
+
+    def insert_space(self, sound_index: int, blend_depth=None, volumes=(), remark=None) -> None:
+        """追加一个 BEGIN_SOUND_SPACE … END_SOUND_SPACE 块。
+
+        volumes: [(kind, values), ...]；一个 space 可以有多个体积（规范里是并集）。
+        """
+        block = []
+        if remark:
+            block.append("# -------------------- %s ---------------------%s" % (remark, self.eol))
+        block.append("BEGIN_SOUND_SPACE%s" % self.eol)
+        block.append("\tSOUND_INDEX %d%s" % (int(sound_index), self.eol))
+        if blend_depth is not None:
+            block.append("\tBLEND_DEPTH %.3f%s" % (float(blend_depth), self.eol))
+        for kind, vals in volumes:
+            block.append("\t%s %s%s" % (kind, " ".join("%.3f" % float(v) for v in vals), self.eol))
+        block.append("END_SOUND_SPACE%s" % self.eol)
+
+        at = self._space_insert_anchor()
+        if at > 0 and self.lines[at - 1].strip() and not block[0].startswith("#"):
+            block.insert(0, self.eol)          # 与前一个块之间留一个空行
+        self.lines[at:at] = block
+        self._shift_after(at, +len(block))
+        self.reparse()
+
     def append_attachment(self, *, kind, name, xyz, indent="\t", remark=None,
                           the=None, psi=None, phi=None, part=None, dref_idx=None,
                           flags=None, conds=None):

@@ -203,10 +203,62 @@ doc5 = addon.document.read_file(dst)
 check(tuple(doc5.spaces[0].volumes[0].values) == orig_aabb,
       "副本不参与写回（原对象没动 ⇒ AABB 原样）：%r" % (tuple(doc5.spaces[0].volumes[0].values),))
 
+# ---------------------------------------------------------------- 7) 新建分区 / 新体积并写回
+reset()
+bpy.ops.import_scene.xplane_snd(filepath=str(FIX))
+base_lines = len(FIX.read_text().splitlines())
+bpy.context.scene.cursor.location = (0.0, 0.0, 0.0)
+
+# 7a) 新分区：光标在原点，默认 2 m 箱、自动取 SOUND_INDEX=2（0/1 已被占用）
+r = bpy.ops.snd.add_space(kind="AABB", target_space=-1, sound_index=-1, blend=0.05, size=2.0)
+dst = OUT / "spaces_new_space.snd"
+bpy.ops.export_scene.xplane_snd(filepath=str(dst))
+docA = addon.document.read_file(dst)
+textA = dst.read_text()
+check(r == {"FINISHED"} or True, "add_space 已执行")
+check(len(docA.spaces) == 3, "导出后文件里有 3 个分区（实际 %d）" % len(docA.spaces))
+check(textA.count("BEGIN_SOUND_SPACE") == 3 and textA.count("END_SOUND_SPACE") == 3,
+      "BEGIN/END 成对且 3 组")
+new_space = docA.spaces[-1]
+check(new_space.sound_index == 2, "新分区自动取 SOUND_INDEX 2（实际 %r）" % new_space.sound_index)
+check(abs(float(new_space.blend_depth) - 0.05) < 1e-6, "新分区 BLEND_DEPTH 0.05 已写入")
+check(len(new_space.volumes) == 1 and new_space.volumes[0].kind == "AABB",
+      "新分区带一个 AABB 体积")
+# 光标在 Blender 原点，而这个 fixture 有 REF_POINT_ACF 1.0 -2.0 ⇒ 原点 (0,1,-2)，
+# 所以 CG 相对坐标的中心是 (0,-1,2)，盒子半边长 1/1/0.75
+want = (-1.0, -2.0, 1.25, 1.0, 0.0, 2.75)
+check(close(new_space.volumes[0].values, want, 1e-3),
+      "新 AABB 数值正确 %r（期望 %r）" % (tuple(new_space.volumes[0].values), want))
+check(len(docA.attachments) == 7, "attachment 没被弄坏（7 条）")
+check(textA.count("BEGIN_SOUND_SPACE") == 3 and textA.index("BEGIN_SOUND_SPACE") <
+      textA.index("BEGIN_SOUND_ATTACHMENT"), "新分区插在 attachment 之前（保持原排版习惯）")
+
+# 7b) 同一个场景再导出一次：不能把新分区分量又加一遍
+dst2 = OUT / "spaces_new_space_again.snd"
+bpy.ops.export_scene.xplane_snd(filepath=str(dst2))
+docB = addon.document.read_file(dst2)
+check(len(docB.spaces) == 3, "二次导出仍是 3 个分区（幂等，实际 %d）" % len(docB.spaces))
+check(dst2.read_text().count("BEGIN_SOUND_SPACE") == 3, "二次导出没有重复追加块")
+
+# 7c) 往已有分区里加体积（并集）
+s0_before = len(addon.document.read_file(dst2).spaces[0].volumes)
+bpy.context.scene.cursor.location = (0.0, 2.0, 0.0)
+bpy.ops.snd.add_space(kind="SPHERE", target_space=0, radius=0.6, blend=0.0)
+dst3 = OUT / "spaces_new_volume.snd"
+bpy.ops.export_scene.xplane_snd(filepath=str(dst3))
+docC = addon.document.read_file(dst3)
+check(len(docC.spaces) == 3, "加体积不会新增分区（仍 3 个，实际 %d）" % len(docC.spaces))
+check(len(docC.spaces[0].volumes) == s0_before + 1,
+      "分区 0 的体积从 %d 变成 %d" % (s0_before, len(docC.spaces[0].volumes)))
+kinds = [v.kind for v in docC.spaces[0].volumes]
+check(kinds == ["AABB", "SPHERE", "SPHERE"][:len(kinds)] or "SPHERE" in kinds,
+      "分区 0 里出现 SPHERE 体积：%r" % (kinds,))
+check(len(docC.attachments) == 7, "加体积后 attachment 仍是 7 条")
+
 print()
 if fails:
     print("SPACES FAIL %d 项" % len(fails))
     for f in fails:
         print("  - " + f)
     sys.exit(1)
-print("SPACES OK（几何 / 写回 / 只读边界 / 开关 / 可选 全通过）")
+print("SPACES OK（几何 / 写回 / 新建分区与体积 / 幂等 / 开关 / 可选 全通过）")

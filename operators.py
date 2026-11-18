@@ -438,7 +438,10 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
             owners[str(uid)] = obj.name
             added += 1
 
-        # sound space：把框的改动写回 AABB / SPHERE / BLEND_DEPTH 行（没动过就一行都不改）
+        # sound space：先把新建的分区/体积写进文档，再同步已有体积的改动
+        new_spaces, new_vols, new_warns = spaces.add_new(doc, scene, origin, axis)
+        for w in new_warns:
+            self.report({"WARNING"}, w)
         space_vols, space_blends, space_warns = spaces.sync(doc, scene, origin, axis)
         for w in space_warns:
             self.report({"WARNING"}, w)
@@ -449,6 +452,9 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
             self.report({"ERROR"}, "写入失败: %s" % exc)
             return {"CANCELLED"}
 
+        doc.reparse()                      # 以刚写出的内容为准重建索引
+        scene[PROP_SRC_B64] = base64.b64encode(
+            doc.render().encode("utf-8", "surrogateescape")).decode("ascii")
         scene[PROP_PATH] = self.filepath
         scene[PROP_OWNERS] = json.dumps(owners)
         refresh_events(scene)
@@ -459,10 +465,12 @@ class EXPORT_OT_xplane_snd(bpy.types.Operator, ExportHelper):
 
         self.report(
             {"INFO"},
-            "已写出 %s：改了 %d 个 attachment%s%s%s%s"
+            "已写出 %s：改了 %d 个 attachment%s%s%s%s%s%s"
             % (os.path.basename(self.filepath), patched,
                ("，新增 %d 个" % added) if added else "",
                ("，space 体积 %d 个" % space_vols) if space_vols else "",
+               ("，新增分区 %d 个" % new_spaces) if new_spaces else "",
+               ("，新增体积 %d 个" % new_vols) if new_vols else "",
                ("，BLEND_DEPTH %d 处" % space_blends) if space_blends else "",
                (" · " + "; ".join("%s:%s" % (n, "/".join(f)) for n, f in changed_fields[:4])) if changed_fields else ""),
         )
@@ -501,6 +509,65 @@ class SND_OT_mute_all(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SND_OT_add_space(bpy.types.Operator):
+    """在 3D 光标处新建听感分区（或往已有分区里加一个体积）"""
+    bl_idname = "snd.add_space"
+    bl_label = "新建 sound space"
+    bl_options = {"REGISTER", "UNDO"}
+
+    kind: EnumProperty(
+        name="形状",
+        items=(("AABB", "长方体箱 (AABB)", "飞机坐标轴对齐的盒子"),
+               ("SPHERE", "球 (SPHERE)", "球心 + 半径")),
+        default="AABB",
+    )
+    target_space: IntProperty(
+        name="加到分区", default=-1, min=-1,
+        description="-1 = 新建一个分区；≥0 = 加到这个编号的分区里作为新体积（并集）",
+    )
+    sound_index: IntProperty(
+        name="SOUND_INDEX", default=-1, min=-1, max=63,
+        description="-1 = 自动取下一个空闲索引；同一索引对应同一个 inside_ratio[n]",
+    )
+    blend: bpy.props.FloatProperty(name="BLEND_DEPTH (m)", default=0.0, min=0.0, max=10.0)
+    size: bpy.props.FloatProperty(name="边长 (m)", default=2.0, min=0.1, max=200.0)
+    radius: bpy.props.FloatProperty(name="半径 (m)", default=1.0, min=0.05, max=100.0)
+
+    def execute(self, context):
+        scene = context.scene
+        doc = get_doc(scene)
+        if doc is None:
+            self.report({"ERROR"}, "先导入一个 .snd，再新建分区")
+            return {"CANCELLED"}
+        origin = tuple(scene.get(PROP_ORIGIN, (0.0, 0.0, 0.0)))
+        axis = scene.get(PROP_AXIS, "XP2B")
+
+        coll = None
+        for c in bpy.data.collections:
+            if c.name.endswith(" / Sound spaces"):
+                coll = c
+                break
+        if coll is None:
+            base = "SND " + os.path.basename(scene.get(PROP_PATH, "") or "snd")
+            parent = bpy.data.collections.get(base) or bpy.data.collections.new(base)
+            if parent.name not in scene.collection.children:
+                scene.collection.children.link(parent)
+            coll = bpy.data.collections.new(base + " / Sound spaces")
+            parent.children.link(coll)
+
+        sound = self.sound_index
+        if sound < 0:
+            used = {int(s.sound_index) for s in doc.spaces if s.sound_index is not None}
+            sound = next((i for i in range(64) if i not in used), 0)
+        target = None if self.target_space < 0 else self.target_space
+        obj = spaces.new_object(scene, coll, origin, axis, self.kind, sound, self.blend,
+                                size=self.size, radius=self.radius, target_space=target)
+        obj.location = tuple(scene.cursor.location)
+        self.report({"INFO"}, "已新建 %s（SOUND_INDEX %d，%s）—— 导出时写进 .snd"
+                    % (obj.name, sound, "新分区" if target is None else "加到分区 %d" % target))
+        return {"FINISHED"}
+
+
 class SND_OT_toggle_spaces(bpy.types.Operator):
     """显示 / 隐藏 sound space 线框（座舱里一堆框挡视线时用）"""
     bl_idname = "snd.toggle_spaces"
@@ -524,4 +591,4 @@ CLASSES = (
     SND_OT_select_event,
     SND_OT_isolate_event,
     SND_OT_rename_event,IMPORT_OT_xplane_snd, EXPORT_OT_xplane_snd, SND_OT_solo, SND_OT_mute_all,
-    SND_OT_toggle_spaces)
+    SND_OT_toggle_spaces, SND_OT_add_space)
