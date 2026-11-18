@@ -1,252 +1,89 @@
-# io_scene_xplane_snd
+# X-Plane SND for Blender
 
-Blender 里编辑 X-Plane 的 `.snd` 文件：每个 sound attachment 变成场景里的一个 **Speaker**，
-在三维里看位置、拖动摆位，再写回 `.snd`。
+Import, edit and write back X-Plane `.snd` sound files in 3D — every sound attachment becomes a
+Speaker in the viewport, and the listening zones (`AABB` / `SPHERE`) become editable wire volumes.
 
-**视频演示**：[X-Plane 12 FMOD sound space FIX](https://youtu.be/Y4RgjIb13Jc) —— 用这个插件
-把 King Air C90 的听感分区在 Blender 里看见并挪回原位。
+[![Blender 5.2](https://img.shields.io/badge/Blender-5.2_LTS-E87D0D)](https://www.blender.org/download/)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/cpuwolf/io_scene_xplane_snd?include_prereleases)](https://github.com/cpuwolf/io_scene_xplane_snd/releases)
 
-**零依赖**：不需要 XPlane2Blender，也不需要 `io_scene_xplane_obj`，只用 Blender 自带 API +
-Python 标准库。因此 `blender -b` 下可以完整跑回归测试。
+<table>
+<tr>
+<td><a href="https://youtu.be/Y4RgjIb13Jc"><img src="https://img.youtube.com/vi/Y4RgjIb13Jc/hqdefault.jpg" width="430" alt="Video: fixing the King Air C90 sound space"></a></td>
+<td><img src="doc/img/spaces_inside.jpg" width="430" alt="Cockpit listening zone with 413 sound positions"></td>
+</tr>
+<tr>
+<td><sub>Video: finding and fixing the C90 sound-space bug (3 min)</sub></td>
+<td><sub>413 sound positions against the cockpit listening zone</sub></td>
+</tr>
+</table>
 
-## 为什么用 Speaker 而不是 Empty
+Found the invisible box that decides when X-Plane switches from interior to exterior audio, drag
+it into place, export. Untouched files come back byte for byte — it edits your `.snd`, it does not
+rewrite it.
 
-| Speaker 提供 | 用途 |
+## Install
+
+1. Download `io_scene_xplane_snd-<version>.zip` from [Releases](https://github.com/cpuwolf/io_scene_xplane_snd/releases).
+2. Blender ▸ `Edit ▸ Preferences ▸ Get Extensions ▸ ⌄ ▸ Install from Disk…` and pick the zip
+   (or `Get Extensions ▸ X-Plane SND` once it is listed on extensions.blender.org).
+3. Restart Blender — an already-running instance keeps the old module in memory.
+
+Requires **Blender 5.2 LTS**. No other add-on is needed: it does not require XPlane2Blender or
+`io_scene_xplane_obj`, and it never calls them.
+
+## Quick start
+
+1. Drag `…/Aircraft/<your aircraft>/fmod/*.snd` into the 3D viewport (or `File ▸ Import ▸ X-Plane SND`).
+2. Open the sidebar (`N`) ▸ `X-Plane` ▸ `X-Plane SND`. Every attachment is a Speaker, muted by
+   default; the listening zones appear as wire boxes.
+3. Move the Speakers and zones where they belong. `Solo selected` plays one cue at a time.
+4. `File ▸ Export ▸ X-Plane SND (.snd)` writes back to the imported path.
+
+> **Export overwrites that file.** Keep a backup, or export to a copy and rename it to the
+> original file name before launching X-Plane.
+
+## What it does
+
+- **Sound positions as Speakers** — position, orientation cone, per-object metadata; drag to move,
+  `Shift+D` to add another position for the same event.
+- **Listening zones as wire volumes** — boundary plus an inner shell at `BLEND_DEPTH`, so the
+  interior/exterior fade is something you can see; move, resize, create new zones and extra volumes.
+- **Byte-exact round trip** — only edited lines are rewritten; verified on all 56 `.snd` files of a
+  full X-Plane 12 install, including payware, ground vehicles, jetways and carriers.
+- **Correct coordinates** — resolves `REF_POINT_ACF`, or the aircraft's default CG from the `.acf`
+  (feet → metres), and offers the axis mapping the OBJ8 importers use so sounds land on your
+  cockpit geometry.
+- **Events stay grouped** — one collection per `EVENT_NAME`, with select / isolate / rename-whole-group;
+  per-position trigger conditions are preserved.
+
+## Questions people ask first
+
+| Question | Answer |
 |---|---|
-| 物体 location | 对应 `VEH_XYZ`（自动加 CG 偏移） |
-| 锥体 + 旋转 | 对应 `VEH_THE / PSI / PHI`，能看出"朝哪边" |
-| `sound` 数据块 | 挂上重建工程里的 `Assets/*.ogg` 就能试听（Blender 直接读我们 mux 出来的 ogg：48k/立体声） |
-| `muted` | 默认全静音，用「Solo 选中」单独听 |
+| Does it modify my aircraft permanently? | Only the `.snd` you export, line by line. Untouched files export byte-identically. |
+| Do I need XPlane2Blender? | No. Zero dependencies, pure Blender API. |
+| Which Blender? | 5.2 LTS (built and tested on 5.2.2 / 5.2.4). |
+| Will my sound play in Blender? | Attach an audio file to a Speaker and use `Solo selected`; Speaker has no start/end frame, so others stay muted. |
+| Can it create sound spaces? | Yes — place the 3D cursor, hit `+` in the sidebar; new zones are written as proper `BEGIN_SOUND_SPACE` blocks. |
+| Why do positions look offset from my model? | Axis mode: switch to *align with imported mesh*, or check the resolved origin shown in the panel. |
+| Can I edit trigger conditions? | Not yet. Conditions are preserved, copied to duplicates, and shown in custom properties. |
 
-Speaker 自己的衰减/音量字段**写不回** `.snd`（这些由 FMOD 事件管），所以数据仍然以
-custom properties 为准：`snd_event` / `snd_conds` / `snd_part` / `snd_xyz` / `snd_line`。
+## Documentation
 
-## 坐标
-
-`.snd` 的 `VEH_XYZ` 是"相对原点"的米制坐标，原点按这个顺序确定：
-
-1. 文件里有 `REF_POINT_ACF <y> <z>` → 原点 = 作者原点 + (0, y, z)；
-2. 否则读飞机 `.acf` 的默认 CG（`acf/_cgY`、`acf/_cgZ`，单位英尺→米）；
-3. 都没有 → 原点 (0,0,0) 并给出警告。
-
-所以 `作者坐标 = VEH_XYZ + 原点`。C90B 实测：413 条 `VEH_XYZ` 换算后 **84%** 落在座舱曲面
-10 cm 内，开关类误差 **0.0–0.1 cm**，最远的 `fuel_pump ±1.948 m` 正好是机翼位置。
-
-## 轴向：默认与导入的网格对齐
-
-Blender 是 Z-up，X-Plane 是 Y-up、Z 朝后。`io_scene_xplane_obj` / XPlane2Blender 用的变换是
-（见其 `xpmesh.py` 的 `xp_to_bl`）：
-
-```
-X-Plane (x, y, z)  ->  Blender (x, -z, y)
-```
-
-导入 `.snd` 时可选两种轴向：
-
-| 选项 | 坐标 | 用途 |
-|---|---|---|
-| `对齐导入网格 (XP2B)`（默认） | `(x, -z, y)` | 与 `io_scene_xplane_obj` 导入的 OBJ8 重合，可以直接叠在座舱上看 |
-| `原始飞机坐标` | 原样 | 想直接对着 `.snd` 数字核对时用 |
-
-导出时会用**导入时用的那个轴向**反算回飞机坐标，所以两种模式都能 byte-identical 往返。
-
-实测（C90B，436 个 Speaker 对座舱 9 个 OBJ 的曲面距离）：
-
-```
-XP2B : min 0.0003  p50 0.083  p90 0.193   <=0.2m 90%     PASS
-RAW  : min 2.121   p50 3.745  p90 3.940   <=0.2m  0%     FAIL（负向对照，符合预期）
-```
-
-RAW 差 3.7 米正好说明轴向映射既必要也正确 —— 不是"差一点点"，是差一个坐标轴。
-
-## 听感分区（sound space）
-
-**格式层面支持多分区、且一个分区可以有多个体积**（官方 `.snd` 规范，Sound Space Definitions 一节）：
-
-- 最多 **64 个** sound space；索引 `SOUND_INDEX 0–63`，每个索引对应一条 `sim/operation/sound/inside_ratio[n]`。
-- 一个 space 是「一个或多个体积的**并集**」：`AABB`（min/max 六个数）和 `SPHERE`（球心+半径）可以混用，
-  **允许互不相交、也允许重叠**；`BLEND_DEPTH` 按并集边界的向内距离算（边界处 ratio=0，向内 m 米处 → 1.0）。
-- 所有坐标都是米、飞机坐标（+X 右 / +Y 上 / +Z 后），相对默认 CG（或 `REF_POINT_ACF`）。
-- space 不能嵌在 attachment 里，一个 space 必须 `END_SOUND_SPACE` 收尾后才能开下一个。
-
-本机 X-Plane 12 实测（22 个官方 `.snd`）：**4 个文件有 2 个分区**（A330 / A330_AI / b738 / MD80，
-索引都是 0 和 1）；**没有一个官方文件在同一个 space 里放多个体积**（格式允许，只是 Laminar 没用）。
-本插件的 fixture 里两种情形都有，`tests/spaces.py` 都覆盖。
-
-`.snd` 里的 `BEGIN_SOUND_SPACE` 决定 `sim/operation/sound/inside_ratio[n]` 这个 0..1 的听感系数：
-点在体积内 = 1（车内声），体积外 = 0（车外声），从边界向内 `BLEND_DEPTH` 米是线性过渡。
-导入时每个体积画成两层线框：
-
-| | 是什么 | 颜色 |
-|---|---|---|
-| 外框（boundary） | `AABB` 的 6 个数 / `SPHERE` 的球面 —— 数学边界 | 琥珀（AABB）/ 青（SPHERE） |
-| 内框（core） | 边界向内缩 `BLEND_DEPTH` 米 —— 满音量的核心区 | 同色压暗 |
-
-两层之间那条带子就是软过渡区。画法上刻意选了「实体面 + Wireframe 修改器」而不是
-`display_type='WIRE'`：纯线框对象在 Solid 模式下用主题线色（灰），贴在座舱网格里基本看不见；
-另外 `show_in_front = True`，所以透过机身也能看到框。
-
-![C90B 的听感分区：404 个发声点在框内（白），9 个在框外（深灰）](doc/img/spaces_inside.jpg)
-
-![737-800 的两个分区：Cockpit 与 Passenger cabin，各自带过渡内框](doc/img/spaces_zones.jpg)
-
-- 分区对象带 `snd_space_index` / `snd_space_kind` / `snd_space_role` / `snd_blend_depth` 等
-  custom properties，但**没有 `snd_uid`** —— 导出时它们走 sound space 的写回逻辑，不会被当成
-  attachment。
-- 面板里列出每个分区：区域名（取自 `.snd` 里块上方的注释）、AABB/SPHERE、`inside_ratio[n]`、
-  `blend` 距离，并有一个显示/隐藏开关。
-- 导入选项 `Sound spaces` 关掉就不建这些对象。
-
-### 改分区（写回规则）
-
-| 你动的东西 | 写回成什么 |
+| Doc | Contents |
 |---|---|
-| 拖 / 转 / 缩放 **外框** | 该体积的 `AABB` 六个数：取**变换完成后**世界坐标的轴对齐包围盒 |
-| 拖 / 缩放 **球** | `SPHERE` 的球心与半径（半径 = 世界包围盒最长边的一半） |
-| 改对象的 `snd_blend_depth` 属性 | `BLEND_DEPTH` 那一行；原本没有就插在 `SOUND_INDEX` 之后 |
-| 动 **`_core` 内框** | 什么都不写 —— 它是 `BLEND_DEPTH` 的派生物 |
+| [Using the add-on](https://github.com/cpuwolf/io_scene_xplane_snd/blob/main/doc/usage.md) | import options, coordinates, axis modes, export, panel, events |
+| [Sound spaces](https://github.com/cpuwolf/io_scene_xplane_snd/blob/main/doc/sound-space.md) | format limits, how zones are drawn, editing and creating them |
+| [Design notes](https://github.com/cpuwolf/io_scene_xplane_snd/blob/main/doc/design.md) | why Speakers, why metadata on objects, why line patches |
+| [Development](https://github.com/cpuwolf/io_scene_xplane_snd/blob/main/doc/development.md) | headless tests, build, CI, release rules |
+| [Store listing](https://github.com/cpuwolf/io_scene_xplane_snd/blob/main/doc/extensions-listing.md) | text and assets used for the extensions.blender.org submission |
 
-几条刻意的边界：
+## Limitations
 
-- **只认原对象**：导入时把对象名记进 `snd_owner_name`；`Shift+D` 出来的副本名字变成 `_001`，
-  导出时跳过并给警告（分区不支持新增体积，静默吞改动比拒绝更糟）。
-- **差值 < 0.5 mm 视为没动**，所以没编辑过的文件导出仍然逐字节相同。
-- 旋转/非均匀缩放 AABB 后写回的是**轴对齐外包盒**——`.snd` 里只能存 AABB，这不是"尽量贴近"，
-  是唯一正确的行为；球被非均匀缩放会警告，因为那已经不是球。
-- 写回是按行 patch：一次平移只改那 1 行，tab 缩进和其余 2992 行原样保留（C90B 实测
-  2993 行 → 2993 行，diff 恰好 1 行）。
+Reads and writes `.snd` only — no FMOD banks, no audio encoding, no dataref condition editor.
+Deleting a zone or volume still means editing the text.
 
-### 新建分区 / 新体积
+## License
 
-1. 把 3D 光标（`Shift + 右键`）放到想要的位置；
-2. 侧栏 `X-Plane SND` 面板里点 `+`（听感分区那一行的标题右侧）= 新建一个分区；
-   点某个分区行末尾的 `+` = 往**那个分区**里加一个体积（并集）；
-3. `F9` 可以改：形状（AABB / 球）、边长或半径、`SOUND_INDEX`（留 -1 自动取下一个空闲索引）、
-   `BLEND_DEPTH`；
-4. 导出时：新分区追加成一个 `BEGIN_SOUND_SPACE … END_SOUND_SPACE` 块（插在最后一个分区之后、
-   attachment 之前，和 Laminar 的排版一致）；新体积则插进目标分区的 `END_SOUND_SPACE` 之前。
-
-实测（C90B，2993 行 → 2999 行）：只有 6 行是插入的，原有 2993 行一个字节没动，436 个 attachment
-解析结果不变。导出后场景里的「原文基线」会更新成刚写出的内容，所以**同一个场景连续导出两次不会重复追加**。
-
-## 导出：保留原文，只 patch 改动行
-
-`.snd` 里有大量注释和空行（C90B：2993 行里 288 行注释 + 272 行空行），全量重写会把它们
-和作者的排版一起毁掉。所以导出是**行级 patch**：
-
-- 没改过的行原样输出 → 未修改的文件写回后与输入**逐字节相同**
-- 改坐标只重写那条 `VEH_XYZ` 的数字，tab 缩进和行序不动
-- 新增的 Speaker 追加到文件末尾
-
-实测：X-Plane 12 安装目录下 **56 个 `.snd`（含 payware、场景车辆、jetway、航母）全部 byte-identical**；
-移动一个 Speaker 后 diff 恰好 **1 行**：
-
-```
-L148  - \tVEH_XYZ 0.000 1.264 -0.559
-L148  + \tVEH_XYZ 0.000 1.364 -0.559
-```
-
-## 为什么 custom properties 挂在 Speaker 的 Object 上，而不是 Speaker 数据块上
-
-`.snd` 里的一条 attachment 是"**一次摆放**"（某个事件，在这架飞机的这个位置、这组条件下），
-不是"一种声音"。而 Blender 的 Speaker **数据块是可以共享的**：
-
-```python
-dup = bpy.data.objects.new("copy", src.data)
-dup.data == src.data          # True —— Alt+D / 手动共享数据就长这样
-```
-
-如果事件名、条件、VEH_PART 挂在 `obj.data` 上，这两个对象就共用同一组 attachment 元数据，
-改一个等于改两个，导出必然打架。挂在 Object 上天然按实例独立。
-
-其它理由：
-
-- **位置本来就在 Object 上**（`obj.location`）。把名字/条件放 data、位置放 object，
-  等于把同一条 attachment 劈成两半，用户改的时候要在两个面板之间来回跳。
-- **换 Speaker 数据块不会丢元数据**（Object ▸ 数据里换别的 speaker，属性还在对象上）。
-- `Object ▸ Custom Properties` 是导出器与脚本读 per-instance 元数据的惯例位置。
-
-代价也是真的：`Shift+D` 复制出来的副本会带着同样的 `snd_uid`。所以导入时把
-`uid → 对象名` 记进场景属性 `xplane_snd_owners`，导出时**按名字认领原对象**，
-名字对不上的副本当**新增 attachment** 追加到文件末尾（`tests/duplicate.py` 覆盖）。
-
-## 事件与 attachment 是 1:N，Blender 里怎么体现
-
-`.snd` 里 `EVENT_NAME` 是"声音"，`VEH_XYZ` 是"这个声音在这架飞机上的第 N 个发声点"，
-所以一个事件正常会挂很多个位置。C90B 实测：
-
-| 指标 | 值 |
-|---|---|
-| attachment | 436 |
-| 不同 EVENT_NAME | 96 |
-| 每组平均 / 中位 / 最大 | 4.54 / 1 / **39**（`garmin` 39 个按钮） |
-| 多成员组里条件完全一致的 | **0 / 38**（每个位置的条件都带自己的参数下标，所以条件必须留在对象上） |
-
-导入时（选项 `按事件分组`，默认开）每个事件会建一个 Collection：
-`SND C90B.snd / model / kingair_c90b / switches / pushbutton_sm`，一眼能看出哪几个是同一个事件。
-
-侧栏 `X-Plane ▸ X-Plane SND ▸ 事件` 有一个列表（事件名 + 该事件的 Speaker 个数），
-选中行后可以：
-
-- **选中**：把该事件的全部 Speaker 一起选中
-- **隔离**：进局部视图只看这一个事件（再按一次退出）
-- **整组改名**：改所有对象的 `snd_event`，**写回 .snd 时会改掉那一行**（`tests/events.py` 覆盖）
-
-条件（`EVENT_START_COND` 等）仍然逐对象保存 —— 上面的统计说明组内条件几乎都不相同，
-强行提到"事件级"会丢信息。
-
-## 用法
-
-- **把 `.snd` 直接拖进 3D 视图**（`FileHandler` 注册了 `.snd`）→ 不会弹文件对话框，直接导入
-- 或者 `File > Import > X-Plane SND (.snd)` → 选飞机目录里的 `fmod/*.snd`
-- 3D 视图侧栏 `X-Plane > X-Plane SND`：看原点、attachment 数、写回、Solo、全部静音
-- 改完 `File > Export > X-Plane SND (.snd)` 写回（默认写回原路径）
-
-试听：给 Speaker 的 `sound` 挂上采样文件即可。注意 Blender 的 Speaker 没有起止帧，
-所有未静音的会一起播 —— 所以默认全静音，用 Solo 逐个听。
-
-## 支持版本
-
-定位 Blender **5.2 LTS**（`blender_version_min = "5.2.0"`），CI 在 **5.2.4** 上验证。
-4.2 / 4.5 / 5.0 未在 CI 里覆盖，因此 manifest 不声明支持。
-
-## 发布流程
-
-打一个 `v*` 的 annotated tag 并 push，CI 会：
-
-1. 跑 lint + Blender 5.2.4 的完整测试（build / validate / install -e / smoke /
-   fixtures 往返 / mutation / origin）；
-2. 全绿后**自动建草稿 Release**，把 `io_scene_xplane_snd-<version>.zip` 作为附件上传；
-   release 正文直接取 tag 的注释（`gh release create --notes-from-tag`）。
-
-```bash
-git tag -a v0.1.0 -m "release note..."   # 已在仓库里
-git push origin main --follow-tags        # 触发 CI → 草稿 Release
-```
-
-草稿 Release 不会公开，需要你到 GitHub 上点 Publish 才算发布。
-若 release job 报 403，去 Settings ▸ Actions ▸ General ▸ Workflow permissions
-选 "Read and write permissions"（workflow 里已经声明 `permissions: contents: write`）。
-
-## 无头测试
-
-```bash
-blender -b --factory-startup -P tests/roundtrip.py                 # 全盘 56 个 .snd 往返
-blender -b --factory-startup -P tests/roundtrip.py -- --raw        # 用原始飞机坐标再跑一遍
-blender -b --factory-startup -P tests/mutation.py                  # 新增/插入字段
-blender -b --factory-startup -P tests/align_mesh.py                # 与网格对齐（自带解析器）
-blender -b                  -P tests/align_mesh.py                 # 同上，但用真·io_scene_xplane_obj 导入器
-blender -b                  -P tests/align_mesh.py -- --raw        # 负向对照，应该 FAIL
-```
-
-`align_mesh.py` 会优先用 `io_scene_xplane_obj` 的导入器（需要它和 XPlane2Blender 可用），
-否则退回自带的 OBJ8 解析 + 同一个 `xp_to_bl` 变换，所以 CI 里不需要装任何插件。
-
-## 现状与边界
-
-- 只做 `.snd`：不读 bank、不碰 FMOD、不做音频编码
-- 不做 `.snd` 里的触发条件编辑（条件原文保留在 custom prop 里，回写不动它）
-- Sound space（`AABB`/`SPHERE`）可编辑并写回；`_core` 内框是派生物、不支持新增分区/体积
-- 几何叠加是可选的：用 `io_scene_xplane_obj` 自己导 OBJ8 进来即可，本插件不调用它
-
-GPL-3.0-or-later
+GPL-3.0-or-later. Not affiliated with Laminar Research; X-Plane is a trademark of Laminar Research.

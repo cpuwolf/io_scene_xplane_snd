@@ -3,7 +3,7 @@ schema_version = "1.0.0"
 # Blender 扩展清单。仓库根就是扩展根：`blender --command extension build` 直接可用。
 # 刻意不声明任何依赖 —— 本插件不需要 XPlane2Blender，也不需要 io_scene_xplane_obj。
 id = "io_scene_xplane_snd"
-version = "0.1.9"
+version = "0.1.10"
 name = "X-Plane SND Import/Export"
 tagline = "Edit X-Plane .snd sound attachments in 3D"
 maintainer = "cpuwolf"
